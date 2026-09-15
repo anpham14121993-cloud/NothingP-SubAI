@@ -372,10 +372,20 @@ function subtitleName(sub, fallback) {
   return String(fallback || '').trim();
 }
 
-function subtitlePickerId(releaseName, fallback) {
-  // Nuvio/Stremio clients commonly render the subtitle object's `id` as the
-  // small identifier line in the picker. Keep the real release name here.
-  return String(releaseName || fallback || 'Subtitle').trim();
+function subtitlePickerId(releaseName, fallback, season = null, episode = null) {
+  // v3.9.71: scope subtitle IDs to the current episode. Nuvio/Stremio can
+  // retain a subtitle selection by `id` while moving from one episode to the
+  // next. Reusing the same release-name ID can therefore make S02E04's
+  // subtitle appear/request again when S02E05 is opened before a new
+  // subtitle is selected. Keep the human-readable release name, but append
+  // a deterministic episode scope so every episode has a distinct identity.
+  const base = String(releaseName || fallback || 'Subtitle').trim();
+  if (season == null || episode == null || Number.isNaN(Number(season)) || Number.isNaN(Number(episode))) {
+    return base;
+  }
+  const s = String(Number(season)).padStart(2, '0');
+  const e = String(Number(episode)).padStart(2, '0');
+  return `${base} [S${s}E${e}]`;
 }
 
 function subtitleDisplayName(releaseName, language, provider) {
@@ -1071,7 +1081,7 @@ async function handleSubtitles(req, res, encodedConfig) {
           },
           'OpenSubtitles Sub'
         );
-        const pickerId = subtitlePickerId(releaseName, `os-${item.id}`);
+        const pickerId = subtitlePickerId(releaseName, `os-${item.id}`, season, episode);
         const isVi = isVietnamese(lang);
 
         // IMPORTANT: defer the authenticated OpenSubtitles /download call
@@ -1184,7 +1194,7 @@ async function handleSubtitles(req, res, encodedConfig) {
         const dlUrl = rawUrl.startsWith('http') ? rawUrl : `https://dl.subdl.com${rawUrl}`;
         const releaseName = subtitleName(sub, 'SubDL Sub');
         const idPart = sub.file_n_id || sub.n_id || sub.nId || sub.id || Math.random().toString(36).slice(2);
-        const pickerId = subtitlePickerId(releaseName, `subdl-${idPart}`);
+        const pickerId = subtitlePickerId(releaseName, `subdl-${idPart}`, season, episode);
 
         const sourceUrl =
           `${hostUrl}/proxy-subdl?url=${encodeURIComponent(dlUrl)}` +
@@ -1293,7 +1303,7 @@ async function handleSubtitles(req, res, encodedConfig) {
           sub,
           sub.productionType || 'SubSource'
         );
-        const pickerId = subtitlePickerId(releaseName, `subsource-${sub.subtitleId}`);
+        const pickerId = subtitlePickerId(releaseName, `subsource-${sub.subtitleId}`, season, episode);
         const downloadUrl =
           `${hostUrl}/subsource-sub/${encodeURIComponent(sub.subtitleId)}` +
           `?config=${encodeURIComponent(encodedConfig || '')}`;
@@ -1636,6 +1646,15 @@ function isSubtitleActivationValid(imdbId, type, season, episode, token) {
   // Original same-process validation remains the preferred path.
   if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
     if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
+    // If this process already knows about a newer activation for the same show,
+    // preserve stale-URL protection while still allowing a valid self-contained
+    // token created on another Vercel/Fluid Compute instance.
+    try {
+      const candidate = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
+      if (Number(candidate?.t || 0) < entry.createdAt) return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   // Vercel instances do not share process memory. A token created by
