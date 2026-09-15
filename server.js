@@ -1,4 +1,4 @@
-// NothingP AIOsubtitles v3.9.68 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback
+// NothingP AIOsubtitles v3.9.69 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback + Gate Cross-Instance Fix
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -1637,8 +1637,8 @@ function isSubtitleActivationValid(imdbId, type, season, episode, token) {
   if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
     if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
     // If this process already knows about a newer activation for the same show,
-    // preserve the original stale-URL protection even on Vercel.
-    if (!process.env.VERCEL) return false;
+    // preserve stale-URL protection while still allowing a valid self-contained
+    // token created on another Vercel/Fluid Compute instance.
     try {
       const candidate = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
       if (Number(candidate?.t || 0) < entry.createdAt) return false;
@@ -1648,11 +1648,11 @@ function isSubtitleActivationValid(imdbId, type, season, episode, token) {
   }
 
   // Vercel instances do not share process memory. A token created by
-  // /subtitles can therefore arrive at another instance with no Map entry,
-  // which previously caused the first click to be incorrectly rejected as
-  // STALE/UNARMED. Validate the self-contained token identity itself instead.
-  if (process.env.VERCEL) {
-    try {
+  // /subtitles can therefore arrive at another instance with no Map entry.
+  // Validate the self-contained token identity itself on EVERY instance instead
+  // of depending on process.env.VERCEL or the local activation Map. This removes
+  // the false first-click STALE/UNARMED block while retaining episode/TTL checks.
+  try {
       const payload = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
       if (!payload || payload.v !== 1) return false;
       if (!payload.t || Date.now() - Number(payload.t) > SUBTITLE_ACTIVATION_TTL_MS) return false;
@@ -1663,7 +1663,6 @@ function isSubtitleActivationValid(imdbId, type, season, episode, token) {
     } catch (_) {
       return false;
     }
-  }
 
   return false;
 }
