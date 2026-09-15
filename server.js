@@ -1,4 +1,4 @@
-// NothingP AIOsubtitles v3.9.67 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback
+// NothingP AIOsubtitles v3.9.68 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -1599,19 +1599,73 @@ function makeActivationEpisodeKey(season, episode) {
 }
 function createSubtitleActivation(imdbId, type, season, episode) {
   const showKey = makeActivationShowKey(imdbId, type);
-  const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-  subtitleActivation.set(showKey, { token, episodeKey: makeActivationEpisodeKey(season, episode), createdAt: Date.now() });
+  const createdAt = Date.now();
+  const payload = {
+    v: 1,
+    i: String(imdbId || '').trim().toLowerCase(),
+    y: String(type || '').trim().toLowerCase(),
+    e: makeActivationEpisodeKey(season, episode),
+    t: createdAt,
+    n: Math.random().toString(36).slice(2, 12)
+  };
+
+  // The token carries its own episode identity so Vercel can validate it
+  // across different serverless/Fluid Compute instances. The in-memory map
+  // is still kept for Render and for the original same-process fast path.
+  const token = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  subtitleActivation.set(showKey, {
+    token,
+    episodeKey: payload.e,
+    createdAt
+  });
+
   const now = Date.now();
   for (const [key, entry] of subtitleActivation) {
     if (!entry || now - entry.createdAt > SUBTITLE_ACTIVATION_TTL_MS) subtitleActivation.delete(key);
   }
   return token;
 }
+
 function isSubtitleActivationValid(imdbId, type, season, episode, token) {
   if (!token) return false;
-  const entry = subtitleActivation.get(makeActivationShowKey(imdbId, type));
-  if (!entry || Date.now() - entry.createdAt > SUBTITLE_ACTIVATION_TTL_MS) return false;
-  return entry.token === String(token) && entry.episodeKey === makeActivationEpisodeKey(season, episode);
+
+  const showKey = makeActivationShowKey(imdbId, type);
+  const episodeKey = makeActivationEpisodeKey(season, episode);
+  const entry = subtitleActivation.get(showKey);
+
+  // Original same-process validation remains the preferred path.
+  if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
+    if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
+    // If this process already knows about a newer activation for the same show,
+    // preserve the original stale-URL protection even on Vercel.
+    if (!process.env.VERCEL) return false;
+    try {
+      const candidate = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
+      if (Number(candidate?.t || 0) < entry.createdAt) return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Vercel instances do not share process memory. A token created by
+  // /subtitles can therefore arrive at another instance with no Map entry,
+  // which previously caused the first click to be incorrectly rejected as
+  // STALE/UNARMED. Validate the self-contained token identity itself instead.
+  if (process.env.VERCEL) {
+    try {
+      const payload = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
+      if (!payload || payload.v !== 1) return false;
+      if (!payload.t || Date.now() - Number(payload.t) > SUBTITLE_ACTIVATION_TTL_MS) return false;
+      if (String(payload.i || '') !== String(imdbId || '').trim().toLowerCase()) return false;
+      if (String(payload.y || '') !== String(type || '').trim().toLowerCase()) return false;
+      if (String(payload.e || '') !== episodeKey) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function makeTranslationCacheKey({
