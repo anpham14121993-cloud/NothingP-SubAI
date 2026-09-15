@@ -1636,15 +1636,6 @@ function isSubtitleActivationValid(imdbId, type, season, episode, token) {
   // Original same-process validation remains the preferred path.
   if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
     if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
-    // If this process already knows about a newer activation for the same show,
-    // preserve stale-URL protection while still allowing a valid self-contained
-    // token created on another Vercel/Fluid Compute instance.
-    try {
-      const candidate = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
-      if (Number(candidate?.t || 0) < entry.createdAt) return false;
-    } catch (_) {
-      return false;
-    }
   }
 
   // Vercel instances do not share process memory. A token created by
