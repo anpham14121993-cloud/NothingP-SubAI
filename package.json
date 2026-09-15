@@ -1,0 +1,19 @@
+{
+  "name": "nothingp-aiosubtitles",
+  "version": "3.9.67",
+  "description": "NothingP AIOsubtitles - Vercel deployment build",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "@vercel/functions": "^3.9.7"
+  }
+}
