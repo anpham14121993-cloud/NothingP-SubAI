@@ -373,7 +373,7 @@ function subtitleName(sub, fallback) {
 }
 
 function subtitlePickerId(releaseName, fallback, season = null, episode = null) {
-  // v3.9.71: scope subtitle IDs to the current episode. Nuvio/Stremio can
+  // v3.9.72: scope subtitle IDs to the current episode. Nuvio/Stremio can
   // retain a subtitle selection by `id` while moving from one episode to the
   // next. Reusing the same release-name ID can therefore make S02E04's
   // subtitle appear/request again when S02E05 is opened before a new
@@ -1646,15 +1646,11 @@ function isSubtitleActivationValid(imdbId, type, season, episode, token) {
   // Original same-process validation remains the preferred path.
   if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
     if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
-    // If this process already knows about a newer activation for the same show,
-    // preserve stale-URL protection while still allowing a valid self-contained
-    // token created on another Vercel/Fluid Compute instance.
-    try {
-      const candidate = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
-      if (Number(candidate?.t || 0) < entry.createdAt) return false;
-    } catch (_) {
-      return false;
-    }
+    // Do NOT reject an otherwise valid self-contained token merely because this
+    // process has a newer activation in RAM. Vercel/Fluid Compute requests can
+    // land on different instances, and the newer-token RAM check can therefore
+    // cause a false STALE/UNARMED block on a legitimate first click.
+    // Episode identity + TTL are validated from the token below.
   }
 
   // Vercel instances do not share process memory. A token created by
