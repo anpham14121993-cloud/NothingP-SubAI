@@ -1029,134 +1029,6 @@ async function handleSubtitles(req, res, encodedConfig) {
   let englishSubtitlesForAI = [];
 
   // ============================================================
-  // STRICT SUBTITLE IDENTITY FILTERS
-  // Never trust a provider result blindly. For TV episodes, the requested
-  // IMDb + season + episode must remain the authoritative identity. Provider
-  // metadata is checked when present; explicit SxxExx filename/release tags
-  // are also checked. Missing metadata is tolerated only when the provider
-  // itself already searched by the authoritative IDs/S/E.
-  // ============================================================
-
-  function normalizeImdb(value) {
-    const m = String(value || '').trim().toLowerCase().match(/tt\d+/);
-    return m ? m[0] : '';
-  }
-
-  function numberOrNull(value) {
-    if (value === '' || value === null || value === undefined) return null;
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function extractSeasonEpisodeFromText(value) {
-    const text = String(value || '').replace(/[._-]+/g, ' ');
-    let m = text.match(/(?:^|\s)S(\d{1,3})\s*E(\d{1,4})(?:\s|$)/i);
-    if (!m) m = text.match(/(?:^|\s)(\d{1,3})x(\d{1,4})(?:\s|$)/i);
-    if (!m) return { season: null, episode: null, explicit: false };
-    return { season: Number(m[1]), episode: Number(m[2]), explicit: true };
-  }
-
-  function collectIdentityValues(value, depth = 0, out = { imdb: [], season: [], episode: [], texts: [] }) {
-    if (value == null || depth > 4) return out;
-    if (typeof value === 'string' || typeof value === 'number') {
-      const text = String(value).trim();
-      if (text) out.texts.push(text);
-      return out;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) collectIdentityValues(item, depth + 1, out);
-      return out;
-    }
-    if (typeof value !== 'object') return out;
-
-    for (const [key, raw] of Object.entries(value)) {
-      const k = String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (raw !== null && raw !== undefined && (typeof raw === 'string' || typeof raw === 'number')) {
-        if (k === 'imdbid' || k === 'imdb') out.imdb.push(String(raw));
-        if (k === 'season' || k === 'seasonnumber' || k === 'seasonno') out.season.push(raw);
-        if (k === 'episode' || k === 'episodenumber' || k === 'episodeno') out.episode.push(raw);
-        if (/name|title|release|filename|file|path|url/.test(k)) out.texts.push(String(raw));
-      }
-      collectIdentityValues(raw, depth + 1, out);
-    }
-    return out;
-  }
-
-  function subtitleMatchesRequestedIdentity(item, {
-    imdbId,
-    type,
-    season,
-    episode,
-    strictEpisode = false,
-    allowEpisodeOnly = false,
-    requireExplicitSeason = false
-  }) {
-    const expectedImdb = normalizeImdb(imdbId);
-    const info = collectIdentityValues(item);
-
-    // If a provider exposes an IMDb identity, it must agree with our request.
-    if (expectedImdb && info.imdb.length) {
-      const knownImdb = info.imdb.map(normalizeImdb).filter(Boolean);
-      if (knownImdb.length && !knownImdb.includes(expectedImdb)) return false;
-    }
-
-    if (type !== 'series' || season === null || episode === null) return true;
-
-    const wantedSeason = Number(season);
-    const wantedEpisode = Number(episode);
-    const explicitPairs = [];
-
-    for (const sv of info.season) {
-      for (const ev of info.episode) {
-        const s = numberOrNull(sv);
-        const e = numberOrNull(ev);
-        if (s !== null && e !== null) explicitPairs.push([s, e]);
-      }
-    }
-
-    // Explicit provider S/E metadata is authoritative.
-    if (explicitPairs.length && explicitPairs.some(([s, e]) => s !== wantedSeason || e !== wantedEpisode)) {
-      return false;
-    }
-    if (explicitPairs.length) return true;
-
-    // If the filename/release name explicitly says SxxExx, it must match.
-    const tagged = info.texts
-      .map(extractSeasonEpisodeFromText)
-      .filter(x => x.explicit);
-    if (tagged.length && tagged.some(x => x.season !== wantedSeason || x.episode !== wantedEpisode)) {
-      return false;
-    }
-    if (tagged.length) return true;
-
-    // SubSource sometimes uses human-readable names such as "Episode 5"
-    // instead of S01E05. When the season context is already an exact
-    // season-level match, an episode-only tag is safe to use.
-    const episodeOnly = info.texts
-      .map(text => String(text).match(/(?:^|[\s._-])(?:episode|ep)\s*0*(\d{1,4})(?:$|[\s._-])/i))
-      .filter(Boolean)
-      .map(m => Number(m[1]));
-    if (episodeOnly.length) {
-      if (episodeOnly.some(e => e !== wantedEpisode)) return false;
-      if (allowEpisodeOnly && !requireExplicitSeason) return true;
-      return false;
-    }
-
-    // An explicit season-only tag (for example S02 FULL SEASON) cannot be
-    // treated as the requested single episode.
-    const seasonOnly = info.texts
-      .map(text => String(text).match(/(?:^|[\s._-])S(\d{1,3})(?:$|[\s._-])/i))
-      .filter(Boolean)
-      .map(m => Number(m[1]));
-    if (seasonOnly.length) return false;
-
-    // strictEpisode is used for provider responses where unpacked episode
-    // records are expected to carry S/E. In that case, do not silently accept
-    // a season/episode-less record that could be a full-season/other-episode file.
-    return !strictEpisode;
-  }
-
-  // ============================================================
   // 1/2/3. QUÉT 3 NGUỒN SONG SONG
   // OpenSubtitles, SubDL và SubSource được chạy đồng thời.
   // Mỗi nguồn tự bắt lỗi riêng để một nguồn lỗi không chặn 2 nguồn còn lại.
@@ -1176,7 +1048,7 @@ async function handleSubtitles(req, res, encodedConfig) {
 
       const searchOS = async languages => {
         const r = await axios.get('https://api.opensubtitles.com/api/v1/subtitles', {
-          params: { ...baseParams, ...(type === 'series' ? { type: 'episode' } : {}), languages },
+          params: { ...baseParams, languages },
           headers: { 'Api-Key': apiKeyOS, ...API_HEADERS },
           timeout: 7000
         });
@@ -1189,11 +1061,9 @@ async function handleSubtitles(req, res, encodedConfig) {
       ]);
       const osVi = osViResult.status === 'fulfilled' ? osViResult.value : [];
       const osEn = osEnResult.status === 'fulfilled' ? osEnResult.value : [];
-      const osViExact = osVi.filter(item => subtitleMatchesRequestedIdentity(item, { imdbId, type, season, episode }));
-      const osEnExact = osEn.filter(item => subtitleMatchesRequestedIdentity(item, { imdbId, type, season, episode }));
       const osSelected = [
-        ...osViExact.filter(item => isVietnamese(item.attributes?.language || '')).slice(0, 6),
-        ...osEnExact.filter(item => isEnglish(item.attributes?.language || '')).slice(0, 6)
+        ...osVi.filter(item => isVietnamese(item.attributes?.language || '')).slice(0, 6),
+        ...osEn.filter(item => isEnglish(item.attributes?.language || '')).slice(0, 6)
       ];
 
       const osMapped = await Promise.allSettled(osSelected.map(async item => {
@@ -1271,10 +1141,9 @@ async function handleSubtitles(req, res, encodedConfig) {
             imdb_id: imdbId,
             type: type === 'series' ? 'tv' : 'movie',
             languages,
-            ...(type === 'series' && season !== null ? { season_number: season } : {}),
-            ...(type === 'series' && episode !== null ? { episode_number: episode } : {}),
-            unpack: 1,
-            client: 'stremio'
+            season: season,
+            episode: episode,
+            unpack: 1
           },
           timeout: 7000
         });
@@ -1311,10 +1180,8 @@ async function handleSubtitles(req, res, encodedConfig) {
         return out;
       };
 
-      const subdlViExact = flatten(viPacks, 'vi').filter(sub => subtitleMatchesRequestedIdentity(sub, { imdbId, type, season, episode, strictEpisode: type === 'series' }));
-      const subdlEnExact = flatten(enPacks, 'en').filter(sub => subtitleMatchesRequestedIdentity(sub, { imdbId, type, season, episode, strictEpisode: type === 'series' }));
-      const subdlVi = subdlViExact.slice(0, 6);
-      const subdlEn = subdlEnExact.slice(0, 6);
+      const subdlVi = flatten(viPacks, 'vi').slice(0, 6);
+      const subdlEn = flatten(enPacks, 'en').slice(0, 6);
       const mapped = [
         ...subdlVi.map(sub => ({ sub, vi: true })),
         ...subdlEn.map(sub => ({ sub, vi: false }))
@@ -1416,22 +1283,9 @@ async function handleSubtitles(req, res, encodedConfig) {
         getSubsourceSubs('english').catch(() => [])
       ]);
 
-      const requireSubSourceSeasonTag = type === 'series' && season !== null && Number(matchedMovie?.season) !== season;
       let vietnameseSubs = [...viPrimary, ...viFallback]
-        .filter(sub => subtitleMatchesRequestedIdentity(sub, {
-          imdbId, type, season, episode,
-          strictEpisode: type === 'series',
-          allowEpisodeOnly: true,
-          requireExplicitSeason: requireSubSourceSeasonTag
-        }))
         .filter(sub => isVietnamese(sub.language ?? sub.languageCode ?? sub.language_code ?? sub.lang));
       let englishSubs = english
-        .filter(sub => subtitleMatchesRequestedIdentity(sub, {
-          imdbId, type, season, episode,
-          strictEpisode: type === 'series',
-          allowEpisodeOnly: true,
-          requireExplicitSeason: requireSubSourceSeasonTag
-        }))
         .filter(sub => isEnglish(sub.language ?? sub.languageCode ?? sub.language_code ?? sub.lang));
 
       // Keep native Vietnamese AND English separately.
@@ -1514,7 +1368,57 @@ async function handleSubtitles(req, res, encodedConfig) {
   // Stremio can receive duplicate English entries when multiple provider
   // records point to the same download URL. Keep one AI entry per unique
   // translate URL so the subtitle picker does not show duplicate Gemini items.
+  // Deduplicate ONLY the same underlying subtitle from the same provider.
+  // Do NOT deduplicate by displayed release name: different providers/files can
+  // legitimately use the same release name and must remain selectable.
   const seenSubtitleKeys = new Set();
+  const subtitleDedupKey = sub => {
+    const url = String(sub?.url || '').trim();
+    const lowerUrl = url.toLowerCase();
+
+    if (lowerUrl.includes('/proxy-os?')) {
+      try {
+        const u = new URL(url);
+        const fileId = String(u.searchParams.get('fileId') || '').trim();
+        if (fileId) return `os:file:${fileId}`;
+      } catch (_) {}
+      return `os:url:${url}`;
+    }
+
+    if (lowerUrl.includes('/proxy-subdl?')) {
+      try {
+        const u = new URL(url);
+        const raw = u.searchParams.get('url') || '';
+        if (raw) return `subdl:url:${raw}`;
+      } catch (_) {}
+      return `subdl:url:${url}`;
+    }
+
+    if (lowerUrl.includes('/subsource-sub/')) {
+      try {
+        const u = new URL(url);
+        const pathMatch = u.pathname.match(/\/subsource-sub\/([^/?]+)/i);
+        if (pathMatch?.[1]) return `subsource:id:${decodeURIComponent(pathMatch[1])}`;
+      } catch (_) {}
+      return `subsource:url:${url}`;
+    }
+
+    if (lowerUrl.includes('/translate-sub?')) {
+      try {
+        const u = new URL(url);
+        const provider = String(u.searchParams.get('provider') || '').toLowerCase();
+        const fileId = String(u.searchParams.get('fileId') || '').trim();
+        const subtitleId = String(u.searchParams.get('subtitleId') || '').trim();
+        const sourceUrl = String(u.searchParams.get('sourceUrl') || '').trim();
+        if (provider === 'os' && fileId) return `os:file:${fileId}`;
+        if (provider === 'subdl' && sourceUrl) return `subdl:url:${sourceUrl}`;
+        if (provider === 'subsource' && subtitleId) return `subsource:id:${subtitleId}`;
+      } catch (_) {}
+    }
+
+    return `url:${url}`;
+  };
+
   // Force subtitle picker order: OpenSubtitles -> SubSource -> SubDL.
   // The provider fetches run in parallel, so Promise.allSettled completion/order
   // must never determine the order shown to Stremio/Nuvio.
@@ -1529,11 +1433,7 @@ async function handleSubtitles(req, res, encodedConfig) {
   };
 
   const subtitles = [...nativeVietSubtitles, ...englishOriginalSubtitles].filter(sub => {
-    const nameKey = String(sub?.name || '').trim().toLowerCase();
-    const urlKey = String(sub?.url || '').trim();
-    // Prefer URL identity, but also collapse provider duplicates that expose
-    // the exact same displayed subtitle name in the picker.
-    const key = nameKey ? `name:${nameKey}` : `url:${urlKey}`;
+    const key = subtitleDedupKey(sub);
     if (seenSubtitleKeys.has(key)) return false;
     seenSubtitleKeys.add(key);
     return true;
