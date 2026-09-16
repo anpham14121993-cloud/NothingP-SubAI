@@ -1141,8 +1141,8 @@ async function handleSubtitles(req, res, encodedConfig) {
             imdb_id: imdbId,
             type: type === 'series' ? 'tv' : 'movie',
             languages,
-            season: season,
-            episode: episode,
+            ...(type === 'series' && season !== null ? { season_number: season } : {}),
+            ...(type === 'series' && episode !== null ? { episode_number: episode } : {}),
             unpack: 1
           },
           timeout: 7000
@@ -1277,16 +1277,37 @@ async function handleSubtitles(req, res, encodedConfig) {
       };
 
       // Once the movie is identified, VI/EN subtitle searches are also parallel.
-      let [viPrimary, viFallback, english] = await Promise.all([
-        getSubsourceSubs('vi').catch(() => []),
-        getSubsourceSubs('vie').catch(() => []),
+      let [vietnamesePrimary, english] = await Promise.all([
+        getSubsourceSubs('vietnamese').catch(() => []),
         getSubsourceSubs('english').catch(() => [])
       ]);
 
-      let vietnameseSubs = [...viPrimary, ...viFallback]
+      let vietnameseSubs = vietnamesePrimary
         .filter(sub => isVietnamese(sub.language ?? sub.languageCode ?? sub.language_code ?? sub.lang));
       let englishSubs = english
         .filter(sub => isEnglish(sub.language ?? sub.languageCode ?? sub.language_code ?? sub.lang));
+
+      // v3.9.72 provider fix: if SubSource exposes season/episode metadata,
+      // reject records that explicitly belong to another episode. Metadata-less
+      // records remain eligible because the matched movie/season already scopes them.
+      const episodeMatchesSubSource = sub => {
+        if (type !== 'series' || season === null || episode === null) return true;
+        const sVals = [sub?.season, sub?.seasonNumber, sub?.season_number,
+          sub?.attributes?.season, sub?.attributes?.seasonNumber, sub?.attributes?.season_number]
+          .map(Number).filter(Number.isFinite);
+        const eVals = [sub?.episode, sub?.episodeNumber, sub?.episode_number,
+          sub?.attributes?.episode, sub?.attributes?.episodeNumber, sub?.attributes?.episode_number]
+          .map(Number).filter(Number.isFinite);
+        if (sVals.some(v => v !== Number(season))) return false;
+        if (eVals.some(v => v !== Number(episode))) return false;
+        const names = [sub?.releaseName, sub?.release_name, sub?.fileName, sub?.file_name, sub?.name, sub?.title,
+          sub?.attributes?.releaseName, sub?.attributes?.release_name, sub?.attributes?.fileName, sub?.attributes?.file_name,
+          sub?.attributes?.name, sub?.attributes?.title].filter(Boolean).join(' ');
+        const m = names.match(/(?:^|[\s._\-\[(])S(\d{1,3})[ ._\-]?E(\d{1,3})(?=$|[\s._\-\])])/i);
+        return !m || (Number(m[1]) === Number(season) && Number(m[2]) === Number(episode));
+      };
+      vietnameseSubs = vietnameseSubs.filter(episodeMatchesSubSource);
+      englishSubs = englishSubs.filter(episodeMatchesSubSource);
 
       // Keep native Vietnamese AND English separately.
       // English is needed both as the original subtitle and as the source for Gemini AI.
