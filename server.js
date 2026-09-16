@@ -2488,4 +2488,206 @@ ${cue.body}`
       const OVERLAP_CONTEXT_CUES = 12;
       const getOverlapContext = (chunkIndex) => {
         if (chunkIndex <= 0) return '';
-        
+        const previousChunk = chunks[chunkIndex - 1];
+        if (!previousChunk) return '';
+        const previousCues = parseSrtCues(previousChunk);
+        if (!previousCues.length) return '';
+        const tail = previousCues.slice(-OVERLAP_CONTEXT_CUES);
+        return buildSrtFromCues(tail);
+      };
+
+      const buildOverlapPrompt = (chunkIndex) => {
+        const overlap = getOverlapContext(chunkIndex);
+        if (!overlap) return '';
+        return `\n\n[NGỮ CẢNH GỐI ĐẦU — CHUNK TRƯỚC]\nĐây là ${Math.min(OVERLAP_CONTEXT_CUES, parseSrtCues(chunks[chunkIndex - 1] || '').length)} cue cuối của chunk ngay trước. Chỉ dùng để hiểu mạch hội thoại, nhân vật, quan hệ và cách xưng hô. KHÔNG dịch lại, KHÔNG đưa các cue này vào kết quả.\n${overlap}\n[HẾT NGỮ CẢNH GỐI ĐẦU]`;
+      };
+
+      const translateOneValidated = async (sourceChunk, label, orderedKeys, keyIndexMap, expectedCueCount, chunkIndex = -1) => {
+        const basePrompt = `Bạn là dịch giả phụ đề phim chuyên nghiệp, chuyên Việt hóa lời thoại điện ảnh.
+
+MỤC TIÊU:
+Dịch đoạn SRT tiếng Anh dưới đây sang tiếng Việt tự nhiên, đúng sắc thái và đúng bối cảnh. ${contextGuide}${chunkIndex >= 0 ? buildOverlapPrompt(chunkIndex) : ''}
+
+NGUYÊN TẮC XƯNG HÔ:
+- Ưu tiên tuyệt đối thông tin nhân vật/quan hệ có bằng chứng trong phần ngữ cảnh ở trên.
+- Giữ nhất quán cách xưng hô giữa các nhân vật xuyên suốt bộ phim.
+- Không thay đổi cách xưng hô chỉ vì một câu thoại đứng riêng lẻ.
+- Khi quan hệ chưa xác định, dùng ngữ cảnh câu thoại để chọn cách xưng hô tự nhiên nhất nhưng KHÔNG bịa quan hệ.
+- Phân biệt đại từ người nói với từ gọi người nghe; không dịch máy móc "you" thành một đại từ cố định.
+- Giữ tên riêng, chức danh, biệt danh và thuật ngữ quan trọng nhất quán.
+- Nếu câu thoại có sắc thái kính trọng, khinh miệt, thân mật, đe dọa, mỉa mai... hãy thể hiện bằng tiếng Việt.
+- Không đưa ghi chú của người dịch vào phụ đề.
+
+ĐỊNH DẠNG BẮT BUỘC:
+- Đoạn nguồn có ĐÚNG ${expectedCueCount} cue. Phải trả về ĐÚNG ${expectedCueCount} cue.
+- Giữ nguyên tuyệt đối từng số thứ tự và từng timestamp.
+- MỖI cue nguồn phải có đúng MỘT cue dịch; không gộp, không tách, không bỏ qua kể cả cue rất ngắn.
+- Không được thay đổi, làm tròn, nối hoặc suy đoán timestamp.
+- Chỉ dịch phần text của từng cue.
+- Chỉ trả về SRT đã dịch, không markdown, không giải thích.
+
+SRT CẦN DỊCH:
+${sourceChunk}`;
+
+        let last = await callAIWithModelFallback(basePrompt, orderedKeys, selectedModel, 0, keyIndexMap);
+        if (last?.result) {
+          let validation = validateCueStructure(sourceChunk, last.result, label);
+          console.log(`[Gemini AI] Kiểm tra ${label}: nguồn=${expectedCueCount}, dịch=${validation.translatedCues.length}, timestamp=${validation.ok ? 'OK' : 'MISMATCH'}`);
+          if (validation.ok) return last.result.trim();
+
+          // v3.9.60: CHỈ repair những cue thực sự lỗi/thiếu.
+          // Không retry lại toàn bộ chunk, dù có 1 hay nhiều cue lỗi.
+          // Cue đã OK được giữ nguyên tuyệt đối.
+          const repaired = await mergeFailedCueRepairs(sourceChunk, last.result, label, orderedKeys, keyIndexMap, chunkIndex);
+          if (repaired && parseSrtCues(repaired).length === expectedCueCount) {
+            return repaired.trim();
+          }
+        }
+        throw new Error(`${label}: không thể hoàn tất sau khi validation/retry/repair`);
+      };
+
+      const translateChunk = async (i, workerKey, workerIndex = 0) => {
+        const startedAt = Date.now();
+        const sourceChunk = chunks[i];
+        const expectedCueCount = parseSrtCues(sourceChunk).length;
+        const primaryIndex = Math.max(0, Math.min(baseWorkerKeys.length - 1, Number(workerIndex) || 0));
+        const orderedKeys = baseWorkerKeys.slice(primaryIndex).concat(baseWorkerKeys.slice(0, primaryIndex));
+        const keyIndexMap = orderedKeys.map((_, localIndex) =>
+          (primaryIndex + localIndex) % Math.max(1, baseWorkerKeys.length)
+        );
+        const keyHint = `${String(workerKey).slice(0, 4)}…${String(workerKey).slice(-4)}`;
+        console.log(`⏳ [Gemini AI] Đang dịch chunk ${i + 1}/${chunks.length} | ${expectedCueCount} cue | task-key-index=${primaryIndex + 1}/${baseWorkerKeys.length} | key #${primaryIndex + 1} | key=${keyHint}`);
+
+        try {
+          const result = await translateOneValidated(sourceChunk, `chunk ${i + 1}/${chunks.length}`, orderedKeys, keyIndexMap, expectedCueCount, i);
+          translated.push({ index: i, text: result });
+          statusState.done = translated.length;
+          console.log(`✅ [Gemini AI] Xong chunk ${i + 1}/${chunks.length} | ${((Date.now() - startedAt) / 1000).toFixed(1)}s | ${expectedCueCount} cue`);
+        } catch (firstErr) {
+          console.error(`❌ [Gemini AI] Chunk ${i + 1}/${chunks.length} thất bại sau khi chỉ repair cue lỗi: ${firstErr.message}`);
+          throw firstErr;
+        }
+      };
+
+      const baseWorkerKeys = geminiKeys.slice(0, 3);
+      // v3.9.66: one worker per chunk. Per-key concurrency is still enforced
+      // by GEMINI_MAX_IN_FLIGHT_PER_KEY inside withGeminiKeySlot().
+      const activeWorkerCount = chunks.length;
+
+      console.log(`🚀 [Gemini AI] Multi-request: ${activeWorkerCount} worker | ${chunks.length} chunk | ${baseWorkerKeys.length} key | ${GEMINI_MAX_IN_FLIGHT_PER_KEY} in-flight/key | hard cap 15 starts/60s/key`);
+
+      // Pull chunks from one shared queue. This avoids launching every chunk at
+      // once and prevents a long subtitle from creating a huge Promise.all set.
+      let nextChunkIndex = 0;
+      const chunkWorker = async workerIndex => {
+        while (true) {
+          const i = nextChunkIndex++;
+          if (i >= chunks.length) return;
+          const keyIndex = workerIndex % Math.max(1, baseWorkerKeys.length);
+          const workerKey = baseWorkerKeys[keyIndex];
+          await translateChunk(i, workerKey, keyIndex);
+        }
+      };
+
+      await Promise.all(
+        Array.from({ length: activeWorkerCount }, (_, i) => chunkWorker(i))
+      );
+
+      console.log(`🎉 [Gemini AI] Dịch hoàn tất ${translated.length}/${chunks.length} chunk. Đang ghép SRT...`);
+
+      // Workers finish out of order; restore the original SRT chunk order.
+      translated.sort((a, b) => a.index - b.index);
+
+      // v3.9.34: rebuild the final subtitle timeline from ORIGINAL SRT cues.
+      // This prevents Gemini timestamp drift/duplication from causing subtitle
+      // overlap, double-rendering, and seek artifacts on Android TV/Media3.
+      const finalSrt = rebuildTranslatedSrtFromSource(chunks, translated);
+      const finalNormalizedSrt = normalizeSrtForPlayback(finalSrt);
+      if (!finalNormalizedSrt) throw new Error('Bản dịch cuối rỗng sau khi chuẩn hóa SRT.');
+      console.log(`📤 [Gemini AI] Đã ghép SRT theo timestamp gốc và lưu cache | ${finalNormalizedSrt.length.toLocaleString()} ký tự`);
+      setCachedTranslation(cacheKey, finalNormalizedSrt);
+
+      // Verify that the FINAL SRT is immediately readable from cache.
+      const verifiedFinalSrt = getCachedTranslation(cacheKey);
+      if (!verifiedFinalSrt) {
+        throw new Error('Không xác minh được FINAL SRT trong translation cache.');
+      }
+      console.log(`[translate-sub FINAL CACHE READY] ${cacheKey.slice(0, 180)} | ${verifiedFinalSrt.length.toLocaleString()} ký tự`);
+      console.log(`🟢 [Gemini AI] SAME TRACK READY: lần request tiếp theo của chính URL Gemini này sẽ trả SRT Việt.`);
+
+      if (jobEntry?.resolve) jobEntry.resolve(verifiedFinalSrt);
+      statusState.finished = true;
+      statusState.fallback = '';
+      statusState.etaSeconds = 0;
+      console.log(`🟢 [Gemini AI] Background job hoàn tất | cache ready | ${cacheKey.slice(0, 120)}`);
+      // Request #1 has already returned the temporary status SRT.
+      // The completed SRT is delivered only when a later request hits the cache.
+      return finalNormalizedSrt;
+
+      } catch (err) {
+        const errorMessage = String(err.message || err).replace(/\r?\n/g, ' ').slice(0, 300);
+        console.error('❌ [Gemini AI] Dịch thất bại:', err.stack || err.message || err);
+        const errorSrt =
+          `1\n00:00:01,000 --> 00:00:10,000\n[Gemini AI] Không thể dịch phụ đề: ${errorMessage}`;
+        statusState.error = errorMessage;
+        if (jobEntry?.resolve) jobEntry.resolve(errorSrt);
+        console.error('[translate-sub BACKGROUND ERROR]', errorMessage);
+      } finally {
+        const entry = translationInFlight.get(cacheKey);
+        if (entry === jobEntry) {
+          translationInFlight.delete(cacheKey);
+        }
+        console.log('[translate-sub JOB RELEASED]', cacheKey.slice(0, 180));
+      }
+    })();
+
+    // Render: the Node process remains alive after the response.
+    // Vercel/Fluid Compute: explicitly attach the same promise to the invocation
+    // lifecycle so the translation cannot be discarded when Request #1 responds.
+    if (vercelWaitUntil) {
+      vercelWaitUntil(backgroundJob);
+      console.log('[translate-sub VERCEL WAITUNTIL ATTACHED]', cacheKey.slice(0, 180));
+    } else {
+      void backgroundJob.catch(err => {
+        console.error('[translate-sub background detached]', err);
+      });
+    }
+
+    // Request #1 is the click-trigger: return ONE status subtitle now while
+    // the detached Gemini job continues in the background. A later Reload
+    // requests the same URL and receives the cached final Vietnamese SRT.
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const isMovie = String(type || '').toLowerCase() === 'movie';
+    const expectedTime = isMovie ? '60 giây' : '30 giây';
+    const mediaLabel = isMovie ? 'phim lẻ' : 'phim bộ';
+    const statusMessage =
+      `🟡 Gemini AI đang dịch phụ đề...\n` +
+      `⏱️ Dự kiến ${mediaLabel}: khoảng ${expectedTime}\n` +
+      `⚡ Đang sử dụng cơ chế đa luồng dịch phụ đề\n` +
+      `🔄 Khi dịch xong, bấm Reload phụ đề để nhận bản Việt.`;
+    return res.send(makeStatusSrt(statusMessage, 3600));
+  } catch (err) {
+    console.error('[translate-sub setup]', err.stack || err.message || err);
+    return res.send(
+      `1\n00:00:01,000 --> 00:00:10,000\n[Gemini AI] Không thể bắt đầu dịch: ${String(err.message || err).replace(/\r?\n/g, ' ')}`
+    );
+  }
+});
+
+app.get('/subtitles/:type/:id.json', (req, res) => handleSubtitles(req, res, null));
+app.get('/subtitles/:type/:id/:extra.json', (req, res) => handleSubtitles(req, res, null));
+app.get('/:config/subtitles/:type/:id.json', (req, res) => handleSubtitles(req, res, req.params.config));
+app.get('/:config/subtitles/:type/:id/:extra.json', (req, res) => handleSubtitles(req, res, req.params.config));
+
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`NothingP AIOsubtitles đang chạy tại port ${PORT}`);
+});
+
+// Render's edge proxy can return 502 when a Node request/connection is
+// closed or left idle while a long Gemini translation is still running.
+// Keep the Node side of the connection open long enough for long subtitle jobs.
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 125000;
+server.requestTimeout = 0;
+
