@@ -1,4 +1,4 @@
-// NothingP AIOsubtitles v3.9.69 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback + Gate Cross-Instance Fix
+// NothingP AIOsubtitles v3.9.75 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback + Gate Cross-Instance Fix
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -373,7 +373,7 @@ function subtitleName(sub, fallback) {
 }
 
 function subtitlePickerId(releaseName, fallback, season = null, episode = null) {
-  // v3.9.74: scope subtitle IDs to the current episode. Nuvio/Stremio can
+  // v3.9.75: scope subtitle IDs to the current episode. Nuvio/Stremio can
   // retain a subtitle selection by `id` while moving from one episode to the
   // next. Reusing the same release-name ID can therefore make S02E04's
   // subtitle appear/request again when S02E05 is opened before a new
@@ -1022,7 +1022,7 @@ async function handleSubtitles(req, res, encodedConfig) {
   //
   // Bump this constant only when intentionally invalidating old client-side
   // subtitle URLs after a future protocol/response change.
-  const aiUrlVersion = '3.9.74';
+  const aiUrlVersion = '3.9.75';
 
   let nativeVietSubtitles = [];
   let englishOriginalSubtitles = [];
@@ -1392,7 +1392,8 @@ async function handleSubtitles(req, res, encodedConfig) {
         (type !== 'series' || season === null || movie.season == null || Number(movie.season) === season)
       );
       const matchedMovie = type === 'series' && season !== null
-        ? (matchedMovieCandidates.find(movie => Number(movie.season) === season) || matchedMovieCandidates.find(movie => movie.season == null))
+        ? (matchedMovieCandidates.find(movie => Number(movie.season) === season) ||
+           matchedMovieCandidates.find(movie => movie.season == null))
         : matchedMovieCandidates[0];
 
       if (!matchedMovie?.movieId) return { native, ai };
@@ -1748,15 +1749,8 @@ const translationInFlight = new Map();
 const subtitleActivation = new Map();
 const SUBTITLE_ACTIVATION_TTL_MS = 15 * 60 * 1000;
 
-function normalizeActivationType(type) {
-  const t = String(type || '').trim().toLowerCase();
-  return t === 'tv' || t === 'episode' ? 'series' : t === 'movie' ? 'movie' : t;
-}
-function normalizeActivationImdb(imdbId) {
-  return String(imdbId || '').trim().toLowerCase();
-}
 function makeActivationShowKey(imdbId, type) {
-  return `${normalizeActivationImdb(imdbId)}|${normalizeActivationType(type)}`;
+  return `${String(imdbId || '').trim().toLowerCase()}|${String(type || '').trim().toLowerCase()}`;
 }
 function makeActivationEpisodeKey(season, episode) {
   const s = season === '' || season == null ? '-' : String(Number(season));
@@ -1768,8 +1762,8 @@ function createSubtitleActivation(imdbId, type, season, episode) {
   const createdAt = Date.now();
   const payload = {
     v: 1,
-    i: normalizeActivationImdb(imdbId),
-    y: normalizeActivationType(type),
+    i: String(imdbId || '').trim().toLowerCase(),
+    y: String(type || '').trim().toLowerCase(),
     e: makeActivationEpisodeKey(season, episode),
     t: createdAt,
     n: Math.random().toString(36).slice(2, 12)
@@ -1793,33 +1787,42 @@ function createSubtitleActivation(imdbId, type, season, episode) {
 }
 
 function isSubtitleActivationValid(imdbId, type, season, episode, token) {
+  if (!token) return false;
+
   const showKey = makeActivationShowKey(imdbId, type);
   const episodeKey = makeActivationEpisodeKey(season, episode);
   const entry = subtitleActivation.get(showKey);
-  const now = Date.now();
 
-  // Same-process fallback for clients that omit/strip the gate parameter.
-  // It is still locked to the exact currently activated episode + 15-minute TTL,
-  // so an old episode URL cannot activate translation for the new episode.
-  if (!token) {
-    return !!(entry && now - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS && entry.episodeKey === episodeKey);
+  // Original same-process validation remains the preferred path.
+  if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
+    if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
+    // Do NOT reject an otherwise valid self-contained token merely because this
+    // process has a newer activation in RAM. Vercel/Fluid Compute requests can
+    // land on different instances, and the newer-token RAM check can therefore
+    // cause a false STALE/UNARMED block on a legitimate first click.
+    // Episode identity + TTL are validated from the token below.
   }
 
+  // Vercel instances do not share process memory. A token created by
+  // /subtitles can therefore arrive at another instance with no Map entry.
+  // Validate the self-contained token identity itself on EVERY instance instead
+  // of depending on process.env.VERCEL or the local activation Map. This removes
+  // the false first-click STALE/UNARMED block while retaining episode/TTL checks.
   try {
-    const payload = JSON.parse(Buffer.from(String(token).trim(), 'base64url').toString('utf8'));
-    if (!payload || payload.v !== 1) return false;
-    const issuedAt = Number(payload.t);
-    if (!Number.isFinite(issuedAt)) return false;
-    if (issuedAt > now + 30000) return false;
-    if (now - issuedAt > SUBTITLE_ACTIVATION_TTL_MS) return false;
-    if (normalizeActivationImdb(payload.i) !== normalizeActivationImdb(imdbId)) return false;
-    if (normalizeActivationType(payload.y) !== normalizeActivationType(type)) return false;
-    if (String(payload.e || '') !== episodeKey) return false;
-    return true;
-  } catch (_) {
-    return false;
-  }
+      const payload = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
+      if (!payload || payload.v !== 1) return false;
+      if (!payload.t || Date.now() - Number(payload.t) > SUBTITLE_ACTIVATION_TTL_MS) return false;
+      if (String(payload.i || '') !== String(imdbId || '').trim().toLowerCase()) return false;
+      if (String(payload.y || '') !== String(type || '').trim().toLowerCase()) return false;
+      if (String(payload.e || '') !== episodeKey) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+
+  return false;
 }
+
 function makeTranslationCacheKey({
   url,
   provider,
@@ -2022,9 +2025,7 @@ app.get('/translate-sub', async (req, res) => {
   if (!isSubtitleActivationValid(imdbId, type, season, episode, gate)) {
     console.log('[translate-sub STALE/UNARMED BLOCKED]', JSON.stringify({
       imdbId: imdbId || '', type: type || '', season: season || '', episode: episode || '',
-      provider: provider || '', gatePresent: !!gate,
-      gateLength: gate ? String(gate).length : 0,
-      reason: !gate ? 'NO_GATE_OR_NO_LOCAL_EPISODE_ACTIVATION' : 'TOKEN_IDENTITY_OR_TTL_MISMATCH'
+      provider: provider || '', gatePresent: !!gate
     }));
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     return res.send('');
