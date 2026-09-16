@@ -1,4 +1,4 @@
-// NothingP AIOsubtitles v3.9.75 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback + Gate Cross-Instance Fix
+// NothingP AIOsubtitles v3.9.76 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback + Gate Cross-Instance Fix
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -373,7 +373,7 @@ function subtitleName(sub, fallback) {
 }
 
 function subtitlePickerId(releaseName, fallback, season = null, episode = null) {
-  // v3.9.75: scope subtitle IDs to the current episode. Nuvio/Stremio can
+  // v3.9.76: scope subtitle IDs to the current episode. Nuvio/Stremio can
   // retain a subtitle selection by `id` while moving from one episode to the
   // next. Reusing the same release-name ID can therefore make S02E04's
   // subtitle appear/request again when S02E05 is opened before a new
@@ -1022,7 +1022,7 @@ async function handleSubtitles(req, res, encodedConfig) {
   //
   // Bump this constant only when intentionally invalidating old client-side
   // subtitle URLs after a future protocol/response change.
-  const aiUrlVersion = '3.9.75';
+  const aiUrlVersion = '3.9.76';
 
   let nativeVietSubtitles = [];
   let englishOriginalSubtitles = [];
@@ -1219,7 +1219,8 @@ async function handleSubtitles(req, res, encodedConfig) {
         // /subtitles slow and can cause the entire Stremio request to 502.
         const sourceUrl =
           `${hostUrl}/proxy-os?fileId=${encodeURIComponent(file.file_id)}` +
-          `&config=${encodeURIComponent(encodedConfig || '')}`;
+          `&config=${encodeURIComponent(encodedConfig || '')}` +
+          `&season=${season ?? ''}&episode=${episode ?? ''}&v=3.9.76`;
         if (isVi) {
           return {
             id: pickerId,
@@ -1331,7 +1332,8 @@ async function handleSubtitles(req, res, encodedConfig) {
 
         const sourceUrl =
           `${hostUrl}/proxy-subdl?url=${encodeURIComponent(dlUrl)}` +
-          `&config=${encodeURIComponent(encodedConfig || '')}`;
+          `&config=${encodeURIComponent(encodedConfig || '')}` +
+          `&season=${season ?? ''}&episode=${episode ?? ''}&v=3.9.76`;
         if (vi && isVietnamese(lang)) {
           native.push({
             id: pickerId,
@@ -1456,7 +1458,8 @@ async function handleSubtitles(req, res, encodedConfig) {
         const pickerId = subtitlePickerId(releaseName, `subsource-${sub.subtitleId}`, season, episode);
         const downloadUrl =
           `${hostUrl}/subsource-sub/${encodeURIComponent(sub.subtitleId)}` +
-          `?config=${encodeURIComponent(encodedConfig || '')}`;
+          `?config=${encodeURIComponent(encodedConfig || '')}` +
+          `&season=${season ?? ''}&episode=${episode ?? ''}&v=3.9.76`;
         const subLanguage = sub.language ?? sub.languageCode ?? sub.language_code ?? sub.lang;
 
         if (isViSelected && isVietnamese(subLanguage)) {
@@ -1567,7 +1570,7 @@ app.get('/subsource-sub/:subtitleId', async (req, res) => {
   try {
     const text = await fetchSubsourceSubtitleText(subtitleId, apiKey);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     res.send(text);
   } catch (err) {
     console.error('[VI ORIGINAL SubSource]', err.response?.status || '', err.code || '', err.message);
@@ -1615,7 +1618,7 @@ app.get('/proxy-os', async (req, res) => {
 
     const subtitleText = await fetchSubtitleText(link, SUBTITLE_BROWSER_HEADERS, 30000, 2);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     return res.send(subtitleText);
   } catch (err) {
     const status = err.response?.status || '';
@@ -1646,7 +1649,7 @@ app.get('/proxy-subdl', async (req, res) => {
       'Authorization': `Bearer ${key}`
     }, 30000, 2);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     return res.send(subtitleText);
   } catch (err) {
     console.error('[VI ORIGINAL SubDL]', err.response?.status || '', err.code || '', err.message);
@@ -1660,7 +1663,7 @@ app.get('/proxy-sub', async (req, res) => {
   try {
     const text = await fetchSubtitleText(url, SUBTITLE_BROWSER_HEADERS, 30000);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     res.send(text);
   } catch (err) {
     console.error('[proxy-sub]', err.response?.status || '', err.code || '', err.message);
@@ -1786,41 +1789,41 @@ function createSubtitleActivation(imdbId, type, season, episode) {
   return token;
 }
 
-function isSubtitleActivationValid(imdbId, type, season, episode, token) {
-  if (!token) return false;
-
-  const showKey = makeActivationShowKey(imdbId, type);
-  const episodeKey = makeActivationEpisodeKey(season, episode);
-  const entry = subtitleActivation.get(showKey);
-
-  // Original same-process validation remains the preferred path.
-  if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
-    if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
-    // Do NOT reject an otherwise valid self-contained token merely because this
-    // process has a newer activation in RAM. Vercel/Fluid Compute requests can
-    // land on different instances, and the newer-token RAM check can therefore
-    // cause a false STALE/UNARMED block on a legitimate first click.
-    // Episode identity + TTL are validated from the token below.
-  }
-
-  // Vercel instances do not share process memory. A token created by
-  // /subtitles can therefore arrive at another instance with no Map entry.
-  // Validate the self-contained token identity itself on EVERY instance instead
-  // of depending on process.env.VERCEL or the local activation Map. This removes
-  // the false first-click STALE/UNARMED block while retaining episode/TTL checks.
+function decodeSubtitleActivationToken(token) {
+  if (!token) return null;
   try {
-      const payload = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
-      if (!payload || payload.v !== 1) return false;
-      if (!payload.t || Date.now() - Number(payload.t) > SUBTITLE_ACTIVATION_TTL_MS) return false;
-      if (String(payload.i || '') !== String(imdbId || '').trim().toLowerCase()) return false;
-      if (String(payload.y || '') !== String(type || '').trim().toLowerCase()) return false;
-      if (String(payload.e || '') !== episodeKey) return false;
-      return true;
-    } catch (_) {
-      return false;
-    }
+    const payload = JSON.parse(Buffer.from(String(token), 'base64url').toString('utf8'));
+    if (!payload || payload.v !== 1) return null;
+    const createdAt = Number(payload.t);
+    if (!Number.isFinite(createdAt) || createdAt <= 0) return null;
+    if (Date.now() - createdAt > SUBTITLE_ACTIVATION_TTL_MS) return null;
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
 
-  return false;
+function isSubtitleActivationValid(imdbId, type, season, episode, token) {
+  const payload = decodeSubtitleActivationToken(token);
+  if (!payload) return false;
+
+  if (String(payload.i || '') !== String(imdbId || '').trim().toLowerCase()) return false;
+  if (String(payload.y || '') !== String(type || '').trim().toLowerCase()) return false;
+
+  const requestedEpisodeKey = makeActivationEpisodeKey(season, episode);
+  return String(payload.e || '') === requestedEpisodeKey;
+}
+
+// v3.9.76: Some Stremio/Nuvio clients can omit S/E when re-requesting a
+// subtitle resource even though the signed/self-contained gate still carries
+// the exact episode identity. Recover S/E from the gate instead of falsely
+// classifying a legitimate request as STALE/UNARMED.
+function getEpisodeIdentityFromActivation(token) {
+  const payload = decodeSubtitleActivationToken(token);
+  if (!payload || typeof payload.e !== 'string') return null;
+  const m = payload.e.match(/^(\\d+)\\|(\\d+)$/);
+  if (!m) return { season: null, episode: null };
+  return { season: Number(m[1]), episode: Number(m[2]) };
 }
 
 function makeTranslationCacheKey({
@@ -1969,7 +1972,9 @@ function writeLiveStatus(res, state, force = false) {
 }
 
 app.get('/translate-sub', async (req, res) => {
-  const { url, provider, fileId, sourceUrl, subtitleId, model, config: configQuery, imdbId, type, season, episode, source, target, gate } = req.query;
+  const { url, provider, fileId, sourceUrl, subtitleId, model, config: configQuery, imdbId, type, source, target, gate } = req.query;
+  let season = req.query.season === '' || req.query.season == null ? null : Number(req.query.season);
+  let episode = req.query.episode === '' || req.query.episode == null ? null : Number(req.query.episode);
   // v3.9.48 diagnostic: capture the client request fingerprint so we can verify
   // whether Nuvio sends different headers for preload vs manual subtitle select.
   // Do NOT log query strings/config/API keys.
@@ -2019,6 +2024,14 @@ app.get('/translate-sub', async (req, res) => {
   }
 
   let cacheKey = '';
+
+  // v3.9.76: recover omitted S/E from the self-contained activation token.
+  // If the client supplied S/E, they remain authoritative and must match the token.
+  const gateIdentity = getEpisodeIdentityFromActivation(gate);
+  if (gateIdentity) {
+    if (season === null) season = gateIdentity.season;
+    if (episode === null) episode = gateIdentity.episode;
+  }
 
   // Block stale/unarmed URLs before cache/source/Gemini work. This prevents an old
   // S01E12 subtitle URL from producing a status message while S02E04 is open.
