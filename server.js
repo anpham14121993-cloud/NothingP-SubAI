@@ -1022,7 +1022,7 @@ async function handleSubtitles(req, res, encodedConfig) {
   //
   // Bump this constant only when intentionally invalidating old client-side
   // subtitle URLs after a future protocol/response change.
-  const aiUrlVersion = '3.9.44';
+  const aiUrlVersion = '3.9.45';
 
   let nativeVietSubtitles = [];
   let englishOriginalSubtitles = [];
@@ -1104,7 +1104,7 @@ async function handleSubtitles(req, res, encodedConfig) {
         // Gemini starts only if the client actually requests this URL.
         // Keep lang='eng' so Vietnamese auto-subtitle preferences do not treat
         // this Gemini trigger as a Vietnamese/native subtitle.
-        const aiUrl = `${hostUrl}/translate-sub?provider=os&fileId=${encodeURIComponent(file.file_id)}&model=${encodeURIComponent(modelToUse)}&config=${encodeURIComponent(encodedConfig || '')}&imdbId=${encodeURIComponent(imdbId)}&type=${type}&season=${season || ''}&episode=${episode || ''}&source=en&target=vi&gate=${encodeURIComponent(activationToken)}&v=${aiUrlVersion}`;
+        const aiUrl = `${hostUrl}/translate-sub/g/${encodeURIComponent(activationToken)}?provider=os&fileId=${encodeURIComponent(file.file_id)}&model=${encodeURIComponent(modelToUse)}&config=${encodeURIComponent(encodedConfig || '')}&imdbId=${encodeURIComponent(imdbId)}&type=${type}&season=${season || ''}&episode=${episode || ''}&source=en&target=vi&v=${aiUrlVersion}`;
         return {
           id: pickerId,
           url: aiUrl,
@@ -1209,7 +1209,7 @@ async function handleSubtitles(req, res, encodedConfig) {
         } else if (!vi && isEnglish(lang)) {
           // MANUAL-SELECT ONLY: Selecting this English entry triggers EN -> VI.
           // Never call this URL from subtitle discovery.
-          const aiUrl = `${hostUrl}/translate-sub?provider=subdl&sourceUrl=${encodeURIComponent(dlUrl)}&model=${encodeURIComponent(modelToUse)}&config=${encodeURIComponent(encodedConfig || '')}&imdbId=${encodeURIComponent(imdbId)}&type=${type}&season=${season || ''}&episode=${episode || ''}&source=en&target=vi&gate=${encodeURIComponent(activationToken)}&v=${aiUrlVersion}`;
+          const aiUrl = `${hostUrl}/translate-sub/g/${encodeURIComponent(activationToken)}?provider=subdl&sourceUrl=${encodeURIComponent(dlUrl)}&model=${encodeURIComponent(modelToUse)}&config=${encodeURIComponent(encodedConfig || '')}&imdbId=${encodeURIComponent(imdbId)}&type=${type}&season=${season || ''}&episode=${episode || ''}&source=en&target=vi&v=${aiUrlVersion}`;
           englishOriginalSubtitles.push({
             id: pickerId,
             url: aiUrl,
@@ -1339,13 +1339,13 @@ async function handleSubtitles(req, res, encodedConfig) {
           });
         } else if (!isViSelected && isEnglish(subLanguage)) {
           const aiUrl =
-            `${hostUrl}/translate-sub?provider=subsource` +
+            `${hostUrl}/translate-sub/g/${encodeURIComponent(activationToken)}?provider=subsource` +
             `&subtitleId=${encodeURIComponent(sub.subtitleId)}` +
             `&model=${encodeURIComponent(modelToUse)}` +
             `&config=${encodeURIComponent(encodedConfig || '')}` +
             `&imdbId=${encodeURIComponent(imdbId)}` +
             `&type=${encodeURIComponent(type)}` +
-            `&season=${season || ''}&episode=${episode || ''}&source=en&target=vi&gate=${encodeURIComponent(activationToken)}&v=${aiUrlVersion}`;
+            `&season=${season || ''}&episode=${episode || ''}&source=en&target=vi&v=${aiUrlVersion}`;
           // MANUAL-SELECT ONLY: Selecting this English entry triggers EN -> VI.
           // Never call this URL from subtitle discovery.
           englishOriginalSubtitles.push({
@@ -1885,8 +1885,12 @@ function writeLiveStatus(res, state, force = false) {
   res.write(makeStatusSrt(state.statusNumber++, cueStart, cueEnd, text));
 }
 
-app.get('/translate-sub', async (req, res) => {
-  const { url, provider, fileId, sourceUrl, subtitleId, model, config: configQuery, imdbId, type, season, episode, source, target, gate } = req.query;
+// Gate compatibility: Nuvio/OkHttp may strip the `gate` query parameter while
+// preserving the URL path. Put the activation token in the path for newly
+// advertised AI subtitle URLs, while still accepting the old query form.
+app.get(['/translate-sub', '/translate-sub/g/:gate'], async (req, res) => {
+  const { url, provider, fileId, sourceUrl, subtitleId, model, config: configQuery, imdbId, type, season, episode, source, target, gate: gateQuery } = req.query;
+  const gate = req.params.gate || gateQuery;
   // v3.9.48 diagnostic: capture the client request fingerprint so we can verify
   // whether Nuvio sends different headers for preload vs manual subtitle select.
   // Do NOT log query strings/config/API keys.
@@ -1937,14 +1941,15 @@ app.get('/translate-sub', async (req, res) => {
 
   let cacheKey = '';
 
-  // Block stale/unarmed URLs before cache/source/Gemini work. This prevents an old
-  // S01E12 subtitle URL from producing a status message while S02E04 is open.
+  // Silent stale/unarmed protection: an unselected/old subtitle URL must never
+  // trigger source download, cache reuse, or Gemini. Return an empty body so
+  // Nuvio/Stremio does not display the old subtitle when opening a new episode.
+  // Newly advertised Gemini URLs carry the activation token in the path, which
+  // survives clients that strip unknown query parameters such as `gate`.
   if (!isSubtitleActivationValid(imdbId, type, season, episode, gate)) {
-    console.log('[translate-sub STALE/UNARMED BLOCKED]', JSON.stringify({
-      imdbId: imdbId || '', type: type || '', season: season || '', episode: episode || '',
-      provider: provider || '', gatePresent: !!gate
-    }));
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     return res.send('');
   }
 
@@ -2674,4 +2679,3 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 server.keepAliveTimeout = 120000;
 server.headersTimeout = 125000;
 server.requestTimeout = 0;
-
