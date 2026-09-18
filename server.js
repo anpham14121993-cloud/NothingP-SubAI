@@ -1089,6 +1089,11 @@
           // Fresh token for the currently requested episode; old episode URLs become inert.
           const activationToken = createSubtitleActivation(imdbId, type, season, episode);
 
+          // v3.9.86: cross-instance stale-episode guard.
+          // The newest activation follows this HTTP client across Vercel instances.
+          const activationCookieName = `np_subact_${Buffer.from(makeActivationShowKey(imdbId, type)).toString('base64url').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48)}`;
+          res.append('Set-Cookie', `${activationCookieName}=${encodeURIComponent(activationToken)}; Max-Age=${Math.floor(SUBTITLE_ACTIVATION_TTL_MS / 1000)}; Path=/; HttpOnly; SameSite=Lax; Secure`);
+
           // SAME-TRACK MODE:
           // Keep one stable Gemini subtitle URL for the lifetime of this subtitle track.
           // The click request returns one temporary status SRT and starts the background job.
@@ -2074,7 +2079,18 @@
           // Nuvio/Stremio does not display the old subtitle when opening a new episode.
           // Newly advertised Gemini URLs carry the activation token in the path, which
           // survives clients that strip unknown query parameters such as `gate`.
-          if (!isSubtitleActivationValid(imdbId, type, season, episode, gate)) {
+          const activationCookieName = `np_subact_${Buffer.from(makeActivationShowKey(imdbId, type)).toString('base64url').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48)}`;
+          const cookieHeader = String(req.headers.cookie || '');
+          const activeCookie = cookieHeader.split(';').map(v => v.trim()).find(v => v.startsWith(`${activationCookieName}=`));
+          let activeCookieToken = '';
+          if (activeCookie) {
+            try { activeCookieToken = decodeURIComponent(activeCookie.slice(activationCookieName.length + 1)); } catch (_) {}
+          }
+
+          // If E13 has already been advertised, a retained E12 URL has an older token.
+          // Silence it BEFORE cache lookup, status SRT, source download, or Gemini.
+          if ((activeCookieToken && activeCookieToken !== String(gate || '')) ||
+              !isSubtitleActivationValid(imdbId, type, season, episode, gate)) {
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
