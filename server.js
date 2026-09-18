@@ -1028,6 +1028,15 @@
         - CONTINUITY EVIDENCE: nếu nhiều cue liên tiếp thuộc cùng một lượt/hội thoại và không có bằng chứng đổi người nghe, coi speaker→listener hiện tại tiếp tục cho đến khi có evidence rõ về đổi speaker/listener, chuyển cảnh hoặc chuyển đối tượng giao tiếp.
         - Không tạo khóa mới chỉ từ một đại từ mơ hồ. Ưu tiên SDH speaker labels, tên được gọi trực tiếp, quan hệ/kinship/hierarchy, lượt đáp qua lại và ngữ cảnh lân cận.
         - GENDER–PRONOUN LOCK: nếu Character Guide đã xác định gender của LISTENER/đối tượng là female hoặc male, mọi ADDRESS/danh xưng có giới tính phải tương thích với gender của chính LISTENER/đối tượng đó; KHÔNG suy theo gender của SPEAKER.
+
+- DIRECTIONAL GENDER ADDRESS HARD LOCK:
+  * Resolve every pronoun from SPEAKER -> LISTENER, never from SPEAKER gender alone.
+  * Before writing a Vietnamese second-person form, verify LISTENER.gender and the locked relationship.
+  * If LISTENER is male, never address him as "cô/chị/bà/em gái" unless the source explicitly uses an intentional feminine title/reference.
+  * If LISTENER is female, never address her as "anh/ông/chú/cậu bé" unless the source explicitly uses an intentional masculine title/reference.
+  * Keep A->B and B->A as two separate directional mappings. Never copy ADDRESS from the reverse direction.
+  * For adjacent cues in the same turn, inherit the same SPEAKER -> LISTENER -> SELF/ADDRESS mapping until clear evidence changes the listener.
+  * FINAL PRONOUN AUDIT: for every "anh/cô/chị/em/ông/bà/chú", re-check who is being addressed. If it conflicts with LISTENER.gender or the locked directional pair, correct it before output.
         - Với female đã xác định: KHÔNG gọi bằng “anh”, “ông”, “chú”, “cậu bé” hoặc danh xưng nam tương đương; với male đã xác định: KHÔNG gọi bằng “chị”, “cô”, “bà”, “cô bé” hoặc danh xưng nữ tương đương, TRỪ khi source/ngữ cảnh của tập có bằng chứng rõ ràng đó là cách gọi cố ý/đặc biệt.
         - Trước khi xuất mỗi cue có đại từ/danh xưng hướng tới người nghe, tự kiểm tra: SPEAKER → LISTENER → locked ADDRESS → LISTENER.gender. Nếu ADDRESS mâu thuẫn gender đã xác định, sửa ADDRESS trước khi xuất cue; không được đổi SELF/ADDRESS đã khóa chỉ để câu nghe tự nhiên hơn.
         - CẢM XÚC ĐƠN THUẦN KHÔNG ĐƯỢC PHÁ KHÓA XƯNG HÔ: giận dữ, phẫn nộ, buồn, sợ, hoảng loạn, ghen, căng thẳng, mỉa mai, đe dọa hoặc xúc động chỉ làm thay đổi sắc thái/cách diễn đạt, không tự động đổi SELF/ADDRESS.
@@ -2663,6 +2672,14 @@
         - Nếu Guide đã khóa A→B hoặc B→A thì giữ đúng hướng đó xuyên suốt các chunk.
         - LIÊN TỤC TRONG CÙNG CHUNK: nếu các cue liền nhau vẫn là cùng speaker→listener và không có bằng chứng rõ về đổi register/quan hệ, tái sử dụng chính xác cặp SELF/ADDRESS đã khóa; không tự đổi em→tôi, anh→tôi, cháu→tôi... chỉ để câu nghe mạnh hoặc tự nhiên hơn.
         - DIALOGUE-PAIR INHERITANCE: khi cue hiện tại không tự chứa đủ thông tin speaker/listener nhưng nằm trong cùng lượt/hội thoại liền kề, kế thừa speaker→listener và cặp SELF/ADDRESS gần nhất đã được xác định chắc chắn. Chỉ ngừng kế thừa khi có evidence rõ về đổi speaker, listener, cảnh hoặc đối tượng giao tiếp.
+
+- NEUTRAL VIETNAMESE FILM-DIALOGUE STYLE:
+  * Use natural, broadly understandable Vietnamese; do not deliberately imitate Northern regional speech.
+  * Avoid region-marked/filler choices such as "ạ", "bảo", "chả", "nhỉ", "cơ", "đấy", "ấy", "thế à" when they are merely stylistic alternatives.
+  * Prefer neutral wording according to context, e.g. "nói" rather than colloquial "bảo", and "không" rather than "chả".
+  * Do NOT perform blind word replacement. Preserve the source meaning, emotion, politeness, hierarchy, and relationship.
+  * Use "ạ" only when the source clearly requires a respectful deferential marker and omitting it would materially lose that social meaning; otherwise express politeness naturally without it.
+  * Do not introduce regional particles that are absent from the source merely to make dialogue sound conversational.
         - NO NEUTRAL FALLBACK DRIFT: nếu speaker→listener đã có locked pair, tuyệt đối không tự rơi về “tôi/bạn”, “tôi/anh”, “tôi/chị” hoặc một cặp trung tính khác chỉ vì câu tiếng Anh hiện tại ngắn/mơ hồ. Ví dụ locked SELF=em, ADDRESS=anh thì “And I'll stand here” phải tiếp tục dùng SELF=em nếu vẫn cùng speaker→listener.
         - Nếu chưa chắc cue là lời của ai nhưng continuity mạnh hơn mọi giả thuyết khác, ưu tiên khóa của lượt hội thoại đang tiếp diễn; KHÔNG bịa một speaker/listener mới chỉ để hợp một câu đơn lẻ.
         - Giận dữ/phẫn nộ/buồn/sợ/ghen/căng thẳng/mỉa mai/đe dọa KHÔNG tự nó cho phép đổi đại từ. Thể hiện cảm xúc bằng từ vựng, nhịp câu, mức trực diện và sắc thái, trong khi vẫn giữ SELF/ADDRESS.
