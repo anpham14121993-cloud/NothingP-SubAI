@@ -179,6 +179,10 @@
         .section-title{color:#4fc3f7;margin-top:20px;font-size:14px;font-weight:bold;border-bottom:1px solid #333;padding-bottom:5px}
         button{width:100%;padding:12px;border:0;border-radius:5px;color:#fff;font-weight:bold;margin-top:15px;cursor:pointer;font-size:14px}
         #saveBtn{background:#2e7d32}#installBtn{background:#e50914}#copyBtn{background:#2196F3}
+        #actionNotice{display:none;margin-top:14px;padding:12px;border-radius:6px;background:#263238;color:#fff;font-size:13px;font-weight:bold;line-height:1.4}
+        #actionNotice.ok{display:block;background:#1b5e20}
+        #actionNotice.err{display:block;background:#b71c1c}
+        #actionNotice.wait{display:block;background:#37474f}
         </style>
         </head>
         <body>
@@ -200,6 +204,7 @@
         <label>SubSource API Key</label><input id="subsourceKey" value="${escapeHtml(savedConfig.subsourceKey)}" placeholder="Nhập SubSource API Key">
         <label>SubDL API Key</label><input id="subdlKey" value="${escapeHtml(savedConfig.subdlKey)}">
         <button type="button" id="saveBtn">💾 Lưu thay đổi & đồng bộ Addon</button>
+        <div id="actionNotice" role="status" aria-live="polite"></div>
         <button type="button" id="installBtn">Cài đặt trực tiếp vào Stremio</button>
         <label style="margin-top:20px">Link Addon:</label><input id="addonUrlOutput" readonly>
         <button type="button" id="copyBtn">📋 Sao chép Link Addon</button>
@@ -250,12 +255,25 @@
           return addonUrl;
         }
 
+        function showNotice(message,type){
+          const box=document.getElementById('actionNotice');
+          box.textContent=message;
+          box.className=type||'ok';
+          box.style.display='block';
+          box.scrollIntoView({behavior:'smooth',block:'nearest'});
+        }
+
         document.getElementById('saveBtn').onclick=async()=>{
+          const btn=document.getElementById('saveBtn');
+          btn.disabled=true;
+          showNotice('Đang lưu và đồng bộ vào Addon...','wait');
           try{
             await saveConfig();
-            alert('Đã lưu thay đổi và đồng bộ vào Addon!');
+            showNotice('✅ Đã lưu thay đổi và đồng bộ vào Addon!','ok');
           }catch(e){
-            alert('Lưu thất bại: '+(e.message||e));
+            showNotice('❌ Lưu thất bại: '+(e.message||e),'err');
+          }finally{
+            btn.disabled=false;
           }
         };
 
@@ -281,9 +299,9 @@
               document.execCommand('copy');
               input.setAttribute('readonly','');
             }
-            alert('Đã sao chép link cài đặt!');
+            showNotice('✅ Đã sao chép link cài đặt!','ok');
           }catch(e){
-            alert('Không thể sao chép link cài đặt: '+(e.message||e));
+            showNotice('❌ Không thể sao chép link cài đặt: '+(e.message||e),'err');
           }
         };
 
