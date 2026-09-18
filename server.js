@@ -1024,6 +1024,9 @@
         - Không đảo SELF/ADDRESS. A→B và B→A là hai hướng độc lập.
         - Nếu cùng một nhân vật nói với người nghe khác nhau, SELF/ADDRESS có thể khác theo từng cặp quan hệ; không áp một cặp đại từ toàn cục cho nhân vật.
         - Khi evidence đủ mạnh, khóa cặp xưng hô và giữ nhất quán.
+        - GENDER–PRONOUN LOCK: nếu Character Guide đã xác định gender của LISTENER/đối tượng là female hoặc male, mọi ADDRESS/danh xưng có giới tính phải tương thích với gender của chính LISTENER/đối tượng đó; KHÔNG suy theo gender của SPEAKER.
+        - Với female đã xác định: KHÔNG gọi bằng “anh”, “ông”, “chú”, “cậu bé” hoặc danh xưng nam tương đương; với male đã xác định: KHÔNG gọi bằng “chị”, “cô”, “bà”, “cô bé” hoặc danh xưng nữ tương đương, TRỪ khi source/ngữ cảnh của tập có bằng chứng rõ ràng đó là cách gọi cố ý/đặc biệt.
+        - Trước khi xuất mỗi cue có đại từ/danh xưng hướng tới người nghe, tự kiểm tra: SPEAKER → LISTENER → locked ADDRESS → LISTENER.gender. Nếu ADDRESS mâu thuẫn gender đã xác định, sửa ADDRESS trước khi xuất cue; không được đổi SELF/ADDRESS đã khóa chỉ để câu nghe tự nhiên hơn.
         - CẢM XÚC ĐƠN THUẦN KHÔNG ĐƯỢC PHÁ KHÓA XƯNG HÔ: giận dữ, phẫn nộ, buồn, sợ, hoảng loạn, ghen, căng thẳng, mỉa mai, đe dọa hoặc xúc động chỉ làm thay đổi sắc thái/cách diễn đạt, không tự động đổi SELF/ADDRESS.
         - Chỉ đổi SELF/ADDRESS khi chính lời thoại/ngữ cảnh của tập có bằng chứng rõ rằng speaker/listener đã thay đổi, quan hệ/vai vế giao tiếp thực sự thay đổi, hoặc nhân vật CỐ Ý chuyển register/cách xưng hô để tạo khoảng cách, xúc phạm, trang trọng hóa hay đánh dấu một bước ngoặt quan hệ.
         - Nếu không có bằng chứng rõ cho việc chuyển register/xưng hô, tiếp tục dùng chính xác cặp SELF/ADDRESS đã khóa ở cue trước cho cùng speaker→listener.
