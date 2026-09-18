@@ -1,10 +1,10 @@
-        // NothingP AIOsubtitles v3.9.69 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback + Gate Cross-Instance Fix
+        // Nothing-P • AIOsubtitles v1.0.0 — 20K/120 + 5 in-flight/key + 15 RPM/key + fast timeout fallback + Gate Cross-Instance Fix
         const express = require('express');
         const axios = require('axios');
         const cors = require('cors');
         const AdmZip = require('adm-zip');
 
-        // v3.9.67: Vercel-safe background execution.
+        // v1.0.0: Vercel-safe background execution.
         // Render keeps the Node process alive naturally; Vercel Fluid Compute requires
         // waitUntil() to keep post-response work attached to the invocation lifecycle.
         let vercelWaitUntil = null;
@@ -24,7 +24,7 @@
         const PORT = process.env.PORT || 3000;
         const SUBSOURCE_API = 'https://api.subsource.net/api/v1';
         const API_HEADERS = {
-          'User-Agent': 'AISubtitlePro v3.9.9',
+          'User-Agent': 'AISubtitlePro v1.0.0',
           Accept: 'application/json'
         };
         const SUBTITLE_BROWSER_HEADERS = {
@@ -77,7 +77,7 @@
         <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>Cấu hình NothingP AIOsubtitles</title>
+        <title>Cấu hình Nothing-P • AIOsubtitles</title>
         <style>
         body{background:#121212;color:#fff;font-family:Arial,sans-serif;padding:20px;display:flex;justify-content:center}
         .container{width:100%;max-width:520px;background:#1e1e1e;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.5)}
@@ -86,12 +86,12 @@
         input,select{width:100%;padding:10px;background:#2a2a2a;border:1px solid #444;color:#fff;border-radius:5px;box-sizing:border-box}
         .section-title{color:#4fc3f7;margin-top:20px;font-size:14px;font-weight:bold;border-bottom:1px solid #333;padding-bottom:5px}
         button{width:100%;padding:12px;border:0;border-radius:5px;color:#fff;font-weight:bold;margin-top:15px;cursor:pointer;font-size:14px}
-        #installBtn{background:#e50914}#copyBtn{background:#2196F3}
+        #saveBtn{background:#2e7d32}#installBtn{background:#e50914}#copyBtn{background:#2196F3}
         </style>
         </head>
         <body>
         <div class="container">
-        <h2>NothingP AIOsubtitles v3.9.67</h2>
+        <h2>Nothing-P • AIOsubtitles v1.0.0</h2>
         <form id="configForm">
         <label>Mô hình AI dịch ưu tiên:</label>
         <select id="modelSelect">
@@ -102,11 +102,12 @@
         <label>Gemini API Key 1</label><input id="geminiKey1" value="${escapeHtml(geminiKeys[0])}" placeholder="AIzaSy...">
         <label>Gemini API Key 2</label><input id="geminiKey2" value="${escapeHtml(geminiKeys[1])}">
         <label>Gemini API Key 3</label><input id="geminiKey3" value="${escapeHtml(geminiKeys[2])}">
-        <div style="font-size:12px;color:#aaa;margin-top:8px;line-height:1.45">v3.9.1: 3 Key thuộc 3 Google Project khác nhau sẽ chạy 3 worker dịch song song. Mỗi Project có limiter riêng.</div>
+        <div style="font-size:12px;color:#aaa;margin-top:8px;line-height:1.45">3 Key thuộc 3 Google Project khác nhau sẽ chạy 3 worker dịch song song. Mỗi Project có limiter riêng.</div>
         <div class="section-title">📥 Nguồn phụ đề (OpenSubtitles, SubSource, SubDL)</div>
         <label>OpenSubtitles API Key</label><input id="opensubtitlesKey" value="${escapeHtml(savedConfig.opensubtitlesKey)}">
         <label>SubSource API Key</label><input id="subsourceKey" value="${escapeHtml(savedConfig.subsourceKey)}" placeholder="Nhập SubSource API Key">
         <label>SubDL API Key</label><input id="subdlKey" value="${escapeHtml(savedConfig.subdlKey)}">
+        <button type="button" id="saveBtn">💾 Lưu thay đổi & đồng bộ Addon</button>
         <button type="button" id="installBtn">Cài đặt trực tiếp vào Stremio</button>
         <label style="margin-top:20px">Link Addon:</label><input id="addonUrlOutput" readonly>
         <button type="button" id="copyBtn">📋 Sao chép Link Addon</button>
@@ -114,15 +115,31 @@
         </div>
         <script>
         function getAddonUrl(){
-          const config={
+          const config=getConfigObject();
+          return location.origin+'/'+btoa(unescape(encodeURIComponent(JSON.stringify(config))))+'/manifest.json';
+        }
+        
+        function getConfigObject(){
+          return {
             model:document.getElementById('modelSelect').value,
             geminiKeys:['geminiKey1','geminiKey2','geminiKey3'].map(id=>document.getElementById(id).value.trim()).filter(Boolean),
             opensubtitlesKey:document.getElementById('opensubtitlesKey').value.trim(),
             subdlKey:document.getElementById('subdlKey').value.trim(),
             subsourceKey:document.getElementById('subsourceKey').value.trim()
           };
-          return location.origin+'/'+btoa(unescape(encodeURIComponent(JSON.stringify(config))))+'/manifest.json';
         }
+        function getConfigToken(){
+          return btoa(unescape(encodeURIComponent(JSON.stringify(getConfigObject()))));
+        }
+        document.getElementById('saveBtn').onclick=()=>{
+          const token=getConfigToken();
+          const addonUrl=location.origin+'/'+token+'/manifest.json';
+          document.getElementById('addonUrlOutput').value=addonUrl;
+          try{localStorage.setItem('nothingp_aio_config', JSON.stringify(getConfigObject()));}catch(e){}
+          // The installed Stremio/Nuvio addon is identified by its configured manifest URL.
+          // Opening the newly configured manifest updates/reinstalls that same addon with the new keys.
+          location.href='stremio://'+addonUrl.replace(/^https?:\/\//,'');
+        };
         document.getElementById('installBtn').onclick=()=>{
           location.href='stremio://'+getAddonUrl().replace(/^https?:\\/\\//,'');
         };
@@ -138,9 +155,9 @@
         </html>`);
         }
 
-        // v3.9.34: per-episode job isolation + source-timestamp-locked SRT + seek-safe subtitle output.
-        // v3.9.31: Android TV subtitle playback + click-trigger translation fix.
-        // v3.9.30: deterministic provider order for the configuration page.
+        // v1.0.0: per-episode job isolation + source-timestamp-locked SRT + seek-safe subtitle output.
+        // v1.0.0: Android TV subtitle playback + click-trigger translation fix.
+        // v1.0.0: deterministic provider order for the configuration page.
         // This is separate from the subtitle-picker order.
         const CONFIG_PROVIDER_ORDER = ['os', 'subsource', 'subdl'];
         const configProviderRank = value => {
@@ -152,8 +169,8 @@
 
         const defaultManifest = {
           id: 'org.gemini.ai.subtitle.pro',
-          version: '3.9.67',
-          name: 'NothingP AIOsubtitles',
+          version: '1.0.0',
+          name: 'Nothing-P • AIOsubtitles',
           description: 'Tự động tìm sub Việt chuẩn hoặc dịch AI với sổ tay nhân vật, quan hệ và xưng hô theo bối cảnh.',
           types: ['movie', 'series'],
           catalogs: [],
@@ -164,7 +181,7 @@
         };
 
         app.get('/healthz', (req, res) => {
-          res.status(200).json({ ok: true, version: '3.9.67', uptime: Math.round(process.uptime()) });
+          res.status(200).json({ ok: true, version: '1.0.0', uptime: Math.round(process.uptime()) });
         });
 
         app.get('/manifest.json', (req, res) => res.json(defaultManifest));
@@ -196,7 +213,7 @@
         }
 
 
-        // v3.9.31: Android TV / Media3-safe SRT normalization.
+        // v1.0.0: Android TV / Media3-safe SRT normalization.
         // Gemini is allowed to translate text only; timestamps are taken from the
         // original subtitle and validated again before the final file is returned.
         function parseSrtCues(input) {
@@ -284,11 +301,11 @@
         }
 
         function rebuildTranslatedSrtFromSource(sourceChunks, translatedChunks) {
-          // CRITICAL v3.9.34:
+          // CRITICAL v1.0.0:
           // Gemini may occasionally alter/duplicate timestamps while translating.
           // Never trust Gemini's timeline. The ORIGINAL subtitle is the sole source of
           // truth for start/end times. Each translated chunk is aligned by cue order.
-          // v3.9.36: use the EXACT chunk array that was sent to Gemini.
+          // v1.0.0: use the EXACT chunk array that was sent to Gemini.
           // Re-splitting the original SRT with a different maxChars value caused
           // false mismatches such as source=4 chunks vs translated=7 chunks.
           const finalCues = [];
@@ -331,7 +348,7 @@
         }
 
         function subtitleName(sub, fallback) {
-          // v3.9.30: Resolve the actual release name exposed by each provider.
+          // v1.0.0: Resolve the actual release name exposed by each provider.
           // Different APIs use different field names/casing, so keep all known variants
           // before falling back to the subtitle filename/name.
           const candidates = [
@@ -373,7 +390,7 @@
         }
 
         function subtitlePickerId(releaseName, fallback, season = null, episode = null) {
-          // v3.9.72: scope subtitle IDs to the current episode. Nuvio/Stremio can
+          // v1.0.0: scope subtitle IDs to the current episode. Nuvio/Stremio can
           // retain a subtitle selection by `id` while moving from one episode to the
           // next. Reusing the same release-name ID can therefore make S02E04's
           // subtitle appear/request again when S02E05 is opened before a new
@@ -389,7 +406,7 @@
         }
 
         function subtitleDisplayName(releaseName, language, provider) {
-          // v3.9.30: show language + subtitle source + the real release name.
+          // v1.0.0: show language + subtitle source + the real release name.
           // Example: 🇻🇳 OpenSubtitles WEB-DL 1080p
           const name = String(releaseName || 'Subtitle')
             .replace(/\\s+/g, ' ')
@@ -484,7 +501,7 @@
         }
 
         function splitSrtIntoChunks(srt, maxChars = 16000, maxCues = 150) {
-          // v3.9.48: larger chunks reduce Gemini calls while preserving a hard cue cap.
+          // v1.0.0: larger chunks reduce Gemini calls while preserving a hard cue cap.
           // Never split an individual SRT cue block.
           const blocks = srt.replace(/\r/g, '').trim().split(/\n\s*\n/).filter(Boolean);
           const chunks = [];
@@ -544,11 +561,11 @@
         // next start on that key waits for the oldest start to leave the rolling window.
         const GEMINI_MAX_REQUESTS_PER_MINUTE = 15;
         const GEMINI_WINDOW_MS = 60000;
-        // v3.9.60: hard cap the number of HTTP requests that can be in-flight on one
+        // v1.0.0: hard cap the number of HTTP requests that can be in-flight on one
         // Gemini key. The old version only limited request STARTS, so a bad chunk could
         // launch dozens of repair requests at once and overload the Node/HTTP stack.
         const GEMINI_MAX_IN_FLIGHT_PER_KEY = 10;
-        // v3.9.63: do not let one stalled Gemini request hold a key slot for 60s.
+        // v1.0.0: do not let one stalled Gemini request hold a key slot for 60s.
         // Timeout is treated as transient and immediately rotates to the next key.
         const GEMINI_REQUEST_TIMEOUT_MS = 30000;
         const geminiKeyState = new Map();
@@ -618,7 +635,7 @@
             return { result: '', error: 'Thiếu Gemini API Key.' };
           }
 
-          // v3.9.11: try ALL keys on the SELECTED MODEL first.
+          // v1.0.0: try ALL keys on the SELECTED MODEL first.
           // Do not switch models from inside this function.
           const selectedModel = model || 'gemini-3.5-flash-lite';
 
@@ -945,7 +962,7 @@
         }
 
         
-    // v3.9.80 — English SDH evidence for Character Guide ONLY.
+    // v1.0.0 — English SDH evidence for Character Guide ONLY.
     // This never modifies originalSrt or translation/repair cues.
     function buildSdhGuideEvidence(sdhSrt,maxChars=9000){
       const cues=parseSrtCues(String(sdhSrt||'')),rows=[]; let used=0;
@@ -990,7 +1007,7 @@
           geminiKeys,
           model
         }) {
-          // v3.9.59: compact seven-layer Character/Relationship Guide.
+          // v1.0.0: compact seven-layer Character/Relationship Guide.
           // Generated once per episode/job, then reused by every translation chunk.
           const prompt = `
         Bạn là chuyên gia bản địa hóa phụ đề phim Việt Nam.
@@ -1107,7 +1124,7 @@
           //
           // Bump this constant only when intentionally invalidating old client-side
           // subtitle URLs after a future protocol/response change.
-          const aiUrlVersion = '3.9.45';
+          const aiUrlVersion = '1.0.0';
 
           let nativeVietSubtitles = [];
           let englishOriginalSubtitles = [];
@@ -1265,7 +1282,7 @@
                 return out;
               };
 
-              // v3.9.83 CLEAN: SubDL can return a whole-season pack even when
+              // v1.0.0 CLEAN: SubDL can return a whole-season pack even when
               // episode_number is supplied. Filter EACH unpacked file by requested
               // season/episode before taking the first 6 results.
               const episodeMatchesSubDL = sub => {
@@ -1406,7 +1423,7 @@
               let englishSubs = english
                 .filter(sub => isEnglish(sub.language ?? sub.languageCode ?? sub.language_code ?? sub.lang));
 
-              // v3.9.72 provider fix: if SubSource exposes season/episode metadata,
+              // v1.0.0 provider fix: if SubSource exposes season/episode metadata,
               // reject records that explicitly belong to another episode. Metadata-less
               // records remain eligible because the matched movie/season already scopes them.
               const episodeMatchesSubSource = sub => {
@@ -1419,7 +1436,7 @@
                   .map(Number).filter(Number.isFinite);
                 if (sVals.some(v => v !== Number(season))) return false;
                 if (eVals.some(v => v !== Number(episode))) return false;
-                // v3.9.73 fix: SubSource's releaseName/fileName fields can be an array of
+                // v1.0.0 fix: SubSource's releaseName/fileName fields can be an array of
                 // objects (one per file in the release), e.g. [{name:"Evil.S04E02..."}, ...].
                 // Naively `.join(' ')`-ing the raw fields on such an array produces
                 // "[object Object] [object Object]" garbage that never matches the S/E regex,
@@ -1582,7 +1599,7 @@
           // The provider fetches run in parallel, so Promise.allSettled completion/order
           // must never determine the order shown to Stremio/Nuvio.
           const providerRank = sub => {
-            // v3.9.30: `id` is now the release name shown by Nuvio, so provider
+            // v1.0.0: `id` is now the release name shown by Nuvio, so provider
             // ordering must be derived from the URL instead of the old id prefix.
             const url = String(sub?.url || '').toLowerCase();
             try {
@@ -1795,7 +1812,7 @@
         // In-memory translation cache. This is especially useful on Android/Android TV,
         // where a slow subtitle URL may be requested more than once. Completed results
         // are reused immediately on later subtitle requests.
-        // v3.9.48: cache the character/relationship guide per EPISODE + model.
+        // v1.0.0: cache the character/relationship guide per EPISODE + model.
         // Không dùng guide của tập khác vì quan hệ/xưng hô có thể thay đổi theo tập.
         const characterGuideCache = new Map();
         const CHARACTER_GUIDE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1805,7 +1822,7 @@
         const TRANSLATION_CACHE_MAX = 40;
         const translationInFlight = new Map();
 
-        // v3.9.48: stale subtitle URL gate. Nuvio can keep an old subtitle URL from a
+        // v1.0.0: stale subtitle URL gate. Nuvio can keep an old subtitle URL from a
         // previous episode and request it again when a new episode opens. Old URLs must
         // not start Gemini or return the temporary status subtitle.
         const subtitleActivation = new Map();
@@ -1916,7 +1933,7 @@
           const normalizedModel = String(model || '').trim();
 
           return [
-            'v3.9.63',
+            'v1.0.0',
             logicalSource,
             normalizedModel,
             normalizedImdb,
@@ -1958,7 +1975,7 @@
         }
 
         function makeStatusSrt(message = '', durationSeconds = 30) {
-          // v3.9.33: status is created ONLY after /translate-sub is requested
+          // v1.0.0: status is created ONLY after /translate-sub is requested
           // (i.e. after the user selects the English/Gemini subtitle). It is never
           // generated during /subtitles discovery. The duration is supplied by the
           // translation request flow, not by a timer running in the client.
@@ -2036,7 +2053,7 @@
         app.get(['/translate-sub', '/translate-sub/g/:gate'], async (req, res) => {
           const { url, provider, fileId, sourceUrl, subtitleId, model, config: configQuery, imdbId, type, season, episode, source, target, gate: gateQuery } = req.query;
           const gate = req.params.gate || gateQuery;
-          // v3.9.48 diagnostic: capture the client request fingerprint so we can verify
+          // v1.0.0 diagnostic: capture the client request fingerprint so we can verify
           // whether Nuvio sends different headers for preload vs manual subtitle select.
           // Do NOT log query strings/config/API keys.
           console.log('[translate-sub headers]', JSON.stringify({
@@ -2050,7 +2067,7 @@
             fetchSite: req.get('sec-fetch-site') || '',
             cacheControl: req.get('cache-control') || ''
           }));
-          // v3.9.33 MANUAL-SELECT GATE:
+          // v1.0.0 MANUAL-SELECT GATE:
           // /translate-sub is intentionally a separate resource URL. The subtitle
           // discovery route only advertises this URL; it never downloads the source
           // subtitle and never calls Gemini. If a client chooses to auto-select a
@@ -2061,7 +2078,7 @@
           // is not presented as a Vietnamese subtitle for automatic language choice.
 
 
-          // v3.9.33: MANUAL-SELECTION ONLY + SAME-TRACK / TWO-REQUEST FLOW:
+          // v1.0.0: MANUAL-SELECTION ONLY + SAME-TRACK / TWO-REQUEST FLOW:
           // Request #1 occurs only after the user selects the Gemini subtitle track.
           // Return a temporary status SRT once and start translation in the background.
           // A later request to the SAME track URL -> return the cached final Vietnamese SRT.
@@ -2207,7 +2224,7 @@
               try {
               let originalSrt;
               try {
-                // v3.9.7: never call this Render app's own public /proxy-* URL from
+                // v1.0.0: never call this Render app's own public /proxy-* URL from
                 // /translate-sub. That creates an unnecessary Render edge round-trip
                 // during the long Gemini request and is a common 502 failure point.
                 const sourceConfig = config;
@@ -2301,7 +2318,7 @@
                 }
               }
 
-              // v3.9.48: build a character/relationship/pronoun guide for THIS EPISODE
+              // v1.0.0: build a character/relationship/pronoun guide for THIS EPISODE
               // BEFORE subtitle translation. The guide is generated once per episode/job,
               // then reused by every translation chunk for consistent localization.
               // Không dùng guide của tập khác.
@@ -2372,7 +2389,7 @@
               // Never write to res from the background task.
               // Worker-key pool is initialized later, immediately before the worker scheduler.
               // Do not reference baseWorkerKeys here because it is block-scoped and not initialized yet.
-              // v3.9.63: keep 20k/120-cue chunks to reduce large malformed Gemini outputs. All chunks may run concurrently and
+              // v1.0.0: keep 20k/120-cue chunks to reduce large malformed Gemini outputs. All chunks may run concurrently and
               // may share the same key; per-key in-flight=5 and the 15 request
               // starts per rolling 60 seconds for each individual key.
               // The visible status message uses the requested simple movie/series estimate.
@@ -2382,13 +2399,13 @@
               // Three workers use the three independent Google projects to reduce wall-clock time
               // themselves take longer than the 8s per-project request-start interval.
               // The limiter in callAI() enforces the hard 15 request-starts/60s/key cap.
-              // v3.9.48 CUE REPAIR: when Gemini drops only a few cues, do NOT
+              // v1.0.0 CUE REPAIR: when Gemini drops only a few cues, do NOT
               // Detect failed source cues by their original timestamps, repair ONLY those
               // cues, then rebuild the chunk from the original timeline. No whole-chunk
               // retranslations or recursive cascade are used on the repair path.
               const cueIdentity = cue => `${cue.start}|${cue.end}`;
 
-              // v3.9.59: repair ONLY the exact cues that failed validation.
+              // v1.0.0: repair ONLY the exact cues that failed validation.
               // Successful cues from the original Gemini response are never retransated.
               const getCueRepairTargets = (sourceCues, translatedCues) => {
                 const targets = [];
@@ -2456,7 +2473,7 @@
                 return text;
               };
 
-              // v3.9.63 BATCH REPAIR:
+              // v1.0.0 BATCH REPAIR:
               // If Gemini returns N bad/missing cues, repair ALL of those cues in ONE
               // Gemini request instead of N individual requests. This drastically reduces
               // request count and avoids hitting per-key RPM/request limits during repair.
@@ -2573,7 +2590,7 @@
                   }
                 }
 
-                // v3.9.63: ALL failed cues are sent together in ONE Gemini request.
+                // v1.0.0: ALL failed cues are sent together in ONE Gemini request.
                 // Do not create one request per cue and do not use a concurrent repair pool.
                 const repaired = await repairFailedCuesBatch(
                   targets,
@@ -2740,7 +2757,7 @@
                   console.log(`[Gemini AI] Kiểm tra ${label}: nguồn=${expectedCueCount}, dịch=${validation.translatedCues.length}, timestamp=${validation.ok ? 'OK' : 'MISMATCH'}`);
                   if (validation.ok) return last.result.trim();
 
-                  // v3.9.60: CHỈ repair những cue thực sự lỗi/thiếu.
+                  // v1.0.0: CHỈ repair những cue thực sự lỗi/thiếu.
                   // Không retry lại toàn bộ chunk, dù có 1 hay nhiều cue lỗi.
                   // Cue đã OK được giữ nguyên tuyệt đối.
                   const repaired = await mergeFailedCueRepairs(sourceChunk, last.result, label, orderedKeys, keyIndexMap, chunkIndex);
@@ -2775,7 +2792,7 @@
               };
 
               const baseWorkerKeys = geminiKeys.slice(0, 3);
-              // v3.9.66: one worker per chunk. Per-key concurrency is still enforced
+              // v1.0.0: one worker per chunk. Per-key concurrency is still enforced
               // by GEMINI_MAX_IN_FLIGHT_PER_KEY inside withGeminiKeySlot().
               const activeWorkerCount = chunks.length;
 
@@ -2803,7 +2820,7 @@
               // Workers finish out of order; restore the original SRT chunk order.
               translated.sort((a, b) => a.index - b.index);
 
-              // v3.9.34: rebuild the final subtitle timeline from ORIGINAL SRT cues.
+              // v1.0.0: rebuild the final subtitle timeline from ORIGINAL SRT cues.
               // This prevents Gemini timestamp drift/duplication from causing subtitle
               // overlap, double-rendering, and seek artifacts on Android TV/Media3.
               const finalSrt = rebuildTranslatedSrtFromSource(chunks, translated);
@@ -2886,7 +2903,7 @@
         app.get('/:config/subtitles/:type/:id/:extra.json', (req, res) => handleSubtitles(req, res, req.params.config));
 
         const server = app.listen(PORT, '0.0.0.0', () => {
-          console.log(`NothingP AIOsubtitles đang chạy tại port ${PORT}`);
+          console.log(`Nothing-P • AIOsubtitles đang chạy tại port ${PORT}`);
         });
 
         // Render's edge proxy can return 502 when a Node request/connection is
