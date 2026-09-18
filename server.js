@@ -1423,7 +1423,15 @@
                   typeof sub?.name === 'string' ? sub.name : '',
                   typeof sub?.title === 'string' ? sub.title : ''
                 ].filter(Boolean).join(' ');
-                const matches = [...names.matchAll(/(?:^|[\s._\-\[(])S(\d{1,3})[ ._\-]?E(\d{1,3})(?=$|[\s._\-\])])/gi)];
+                const matches = [];
+                const episodePatterns = [
+                  /(?:^|[\s._\-\[(])S(\d{1,3})[ ._\-]?E(\d{1,3})(?=$|[\s._\-\])])/gi,
+                  /(?:^|[\s._\-\[(])S(\d{1,3})xE?(\d{1,3})(?=$|[\s._\-\])])/gi,
+                  /(?:^|[\s._\-\[(])(\d{1,3})x(\d{1,3})(?=$|[\s._\-\])])/gi
+                ];
+                for (const rx of episodePatterns) {
+                  for (const m of names.matchAll(rx)) matches.push(m);
+                }
                 if (matches.length === 0) return true;
                 return matches.some(m => Number(m[1]) === Number(season) && Number(m[2]) === Number(episode));
               };
@@ -1841,11 +1849,9 @@
           // Original same-process validation remains the preferred path.
           if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
             if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
-            // Do NOT reject an otherwise valid self-contained token merely because this
-            // process has a newer activation in RAM. Vercel/Fluid Compute requests can
-            // land on different instances, and the newer-token RAM check can therefore
-            // cause a false STALE/UNARMED block on a legitimate first click.
-            // Episode identity + TTL are validated from the token below.
+            // A newer /subtitles request for this show has armed a different episode
+            // on this process. Reject the retained old URL before cache lookup.
+            return false;
           }
 
           // Vercel instances do not share process memory. A token created by
@@ -2075,6 +2081,10 @@
           // Newly advertised Gemini URLs carry the activation token in the path, which
           // survives clients that strip unknown query parameters such as `gate`.
           if (!isSubtitleActivationValid(imdbId, type, season, episode, gate)) {
+            console.log('[translate-sub STALE BLOCK]', JSON.stringify({
+              imdbId: imdbId || '', type: type || '',
+              season: season || '', episode: episode || ''
+            }));
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
