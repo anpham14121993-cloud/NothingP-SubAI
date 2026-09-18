@@ -1849,9 +1849,11 @@
           // Original same-process validation remains the preferred path.
           if (entry && Date.now() - entry.createdAt <= SUBTITLE_ACTIVATION_TTL_MS) {
             if (entry.token === String(token) && entry.episodeKey === episodeKey) return true;
-            // A newer /subtitles request for this show has armed a different episode
-            // on this process. Reject the retained old URL before cache lookup.
-            return false;
+
+            // Different episode => retained old URL is stale and must be blocked.
+            // Same episode reopened => an older nonce/token is still valid; continue
+            // to the self-contained episode + TTL validation below.
+            if (entry.episodeKey !== episodeKey) return false;
           }
 
           // Vercel instances do not share process memory. A token created by
