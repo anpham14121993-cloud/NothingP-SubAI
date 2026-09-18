@@ -2674,6 +2674,20 @@
         - DIALOGUE-PAIR INHERITANCE: khi cue hiện tại không tự chứa đủ thông tin speaker/listener nhưng nằm trong cùng lượt/hội thoại liền kề, kế thừa speaker→listener và cặp SELF/ADDRESS gần nhất đã được xác định chắc chắn. Chỉ ngừng kế thừa khi có evidence rõ về đổi speaker, listener, cảnh hoặc đối tượng giao tiếp.
 
 - NEUTRAL VIETNAMESE FILM-DIALOGUE STYLE:
+
+- SOUTHERN VIETNAMESE DIALOGUE HARD STYLE LOCK:
+  * Translate dialogue in natural Southern Vietnamese (phong ngữ miền Nam), while keeping it clear and suitable for film subtitles.
+  * This is a HARD STYLE CONSTRAINT, not a preference. Do not drift into Northern Vietnamese wording or sentence-final particles.
+  * FORBIDDEN as casual stylistic choices: "cơ", "bảo", "á", "ạ", "chả", "nhỉ", "đấy", "ấy", "thế à", "cậu/tớ".
+  * Before outputting each chunk, scan the Vietnamese dialogue for those forms. If one appears only as a regional/filler choice, rewrite the WHOLE phrase naturally in Southern Vietnamese.
+  * Never do blind one-word substitution. Resolve meaning first:
+    - English "tell/say" -> choose "nói", "nói với", "dặn", "kêu", "yêu cầu" according to context; do not default to "bảo".
+    - Northern-style negation such as "chả" -> use natural Southern/neutral "không" when semantically equivalent.
+    - Sentence particles such as "cơ", casual "á", "nhỉ", "đấy" -> normally omit or recast the sentence naturally instead of translating them mechanically.
+    - Avoid "cậu/tớ"; choose the already locked relationship-appropriate Southern pronoun pair.
+  * Proper names and genuine source terms are NOT altered merely because their spelling contains a forbidden substring.
+  * Respect, age, kinship, hierarchy and emotion must still be preserved. Southern style must never override the locked SPEAKER -> LISTENER SELF/ADDRESS mapping.
+  * FINAL SOUTHERN-STYLE AUDIT: after translation and pronoun audit, reread every Vietnamese cue. Rewrite any unnecessary Northern regional wording into natural Southern Vietnamese before returning the chunk.
   * Use natural, broadly understandable Vietnamese; do not deliberately imitate Northern regional speech.
   * Avoid region-marked/filler choices such as "ạ", "bảo", "chả", "nhỉ", "cơ", "đấy", "ấy", "thế à" when they are merely stylistic alternatives.
   * Prefer neutral wording according to context, e.g. "nói" rather than colloquial "bảo", and "không" rather than "chả".
