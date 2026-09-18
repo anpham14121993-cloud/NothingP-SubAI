@@ -2676,6 +2676,25 @@
 - NEUTRAL VIETNAMESE FILM-DIALOGUE STYLE:
 
 - SOUTHERN VIETNAMESE DIALOGUE HARD STYLE LOCK:
+
+- SOUTHERN LEXICAL CHOICE LOCK — MANDATORY:
+  * Vietnamese output must use Southern Vietnamese lexical choices in dialogue, not merely a generally neutral Vietnamese style.
+  * When English permits several natural Vietnamese renderings, choose the Southern form. Do not choose a Northern form and expect a later style instruction to fix it.
+  * In conversational meaning, prefer "vậy" over Northern-style "thế":
+    - "so?" / "is that so?" -> "vậy sao?" / another natural Southern rendering required by context; NOT "thế à?"
+    - "so what?" -> "vậy thì sao?" when that is the intended meaning; NOT "thế thì sao?"
+    - "so..." as a discourse connector -> use "vậy", "vậy thì", "nên", "cho nên", or omit/recast it according to meaning; do NOT default to "thế".
+    - "how so?" -> use a natural Southern contextual rendering such as "sao vậy?" when appropriate; NOT a forced Northern-style "thế nào?".
+  * Conversational "thế" is disallowed when "vậy" or a natural Southern recast expresses the same meaning.
+  * This does NOT ban the syllable "thế" inside unrelated standard words/meanings such as "thế giới", "tư thế", "thế lực", "thay thế", "thế hệ", or other cases where it is part of the actual lexical meaning.
+  * Prefer Southern conversational choices contextually:
+    - "bảo" -> "nói", "nói với", "dặn", "kêu", "yêu cầu" according to source intent.
+    - "chả/chẳng" -> usually "không" when meaning is ordinary negation.
+    - "cậu/tớ" -> use the relationship-locked Southern pronoun pair instead.
+    - avoid Northern discourse particles/fillers such as "cơ", "nhỉ", "đấy", "ạ" and Northern-style uses of "ấy".
+  * Do not mechanically insert stereotyped Southern particles such as "hen", "nha", "nghen", "nè", "hả", "ha". Use them only if the source tone/context genuinely calls for them.
+  * LEXICAL PRE-COMMIT: before translating a cue, decide its Southern lexical equivalents first, then compose the Vietnamese sentence around those choices.
+  * FINAL LEXICAL AUDIT: inspect conversational occurrences of "thế", "bảo", "chả/chẳng", "cơ", "nhỉ", "đấy", "ạ", "cậu/tớ". If a Southern equivalent preserves the same meaning, rewrite the cue using the Southern equivalent before output.
   * Translate dialogue in natural Southern Vietnamese (phong ngữ miền Nam), while keeping it clear and suitable for film subtitles.
   * This is a HARD STYLE CONSTRAINT, not a preference. Do not drift into Northern Vietnamese wording or sentence-final particles.
   * FORBIDDEN as casual stylistic choices: "cơ", "bảo", "á", "ạ", "chả", "nhỉ", "đấy", "ấy", "thế à", "cậu/tớ".
