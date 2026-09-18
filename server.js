@@ -1024,6 +1024,9 @@
         - Không đảo SELF/ADDRESS. A→B và B→A là hai hướng độc lập.
         - Nếu cùng một nhân vật nói với người nghe khác nhau, SELF/ADDRESS có thể khác theo từng cặp quan hệ; không áp một cặp đại từ toàn cục cho nhân vật.
         - Khi evidence đủ mạnh, khóa cặp xưng hô và giữ nhất quán.
+        - DIALOGUE PAIR LOCK: với mỗi cặp nhân vật có đủ evidence, ghi rõ khóa hai chiều A→B và B→A theo dạng speaker, listener, SELF, ADDRESS; đây là khóa theo HƯỚNG, không phải đại từ toàn cục của nhân vật.
+        - CONTINUITY EVIDENCE: nếu nhiều cue liên tiếp thuộc cùng một lượt/hội thoại và không có bằng chứng đổi người nghe, coi speaker→listener hiện tại tiếp tục cho đến khi có evidence rõ về đổi speaker/listener, chuyển cảnh hoặc chuyển đối tượng giao tiếp.
+        - Không tạo khóa mới chỉ từ một đại từ mơ hồ. Ưu tiên SDH speaker labels, tên được gọi trực tiếp, quan hệ/kinship/hierarchy, lượt đáp qua lại và ngữ cảnh lân cận.
         - GENDER–PRONOUN LOCK: nếu Character Guide đã xác định gender của LISTENER/đối tượng là female hoặc male, mọi ADDRESS/danh xưng có giới tính phải tương thích với gender của chính LISTENER/đối tượng đó; KHÔNG suy theo gender của SPEAKER.
         - Với female đã xác định: KHÔNG gọi bằng “anh”, “ông”, “chú”, “cậu bé” hoặc danh xưng nam tương đương; với male đã xác định: KHÔNG gọi bằng “chị”, “cô”, “bà”, “cô bé” hoặc danh xưng nữ tương đương, TRỪ khi source/ngữ cảnh của tập có bằng chứng rõ ràng đó là cách gọi cố ý/đặc biệt.
         - Trước khi xuất mỗi cue có đại từ/danh xưng hướng tới người nghe, tự kiểm tra: SPEAKER → LISTENER → locked ADDRESS → LISTENER.gender. Nếu ADDRESS mâu thuẫn gender đã xác định, sửa ADDRESS trước khi xuất cue; không được đổi SELF/ADDRESS đã khóa chỉ để câu nghe tự nhiên hơn.
@@ -2647,9 +2650,13 @@
         - Không dùng ADDRESS cho I/me/my/mine; không dùng SELF cho you/your/yours.
         - Nếu Guide đã khóa A→B hoặc B→A thì giữ đúng hướng đó xuyên suốt các chunk.
         - LIÊN TỤC TRONG CÙNG CHUNK: nếu các cue liền nhau vẫn là cùng speaker→listener và không có bằng chứng rõ về đổi register/quan hệ, tái sử dụng chính xác cặp SELF/ADDRESS đã khóa; không tự đổi em→tôi, anh→tôi, cháu→tôi... chỉ để câu nghe mạnh hoặc tự nhiên hơn.
+        - DIALOGUE-PAIR INHERITANCE: khi cue hiện tại không tự chứa đủ thông tin speaker/listener nhưng nằm trong cùng lượt/hội thoại liền kề, kế thừa speaker→listener và cặp SELF/ADDRESS gần nhất đã được xác định chắc chắn. Chỉ ngừng kế thừa khi có evidence rõ về đổi speaker, listener, cảnh hoặc đối tượng giao tiếp.
+        - NO NEUTRAL FALLBACK DRIFT: nếu speaker→listener đã có locked pair, tuyệt đối không tự rơi về “tôi/bạn”, “tôi/anh”, “tôi/chị” hoặc một cặp trung tính khác chỉ vì câu tiếng Anh hiện tại ngắn/mơ hồ. Ví dụ locked SELF=em, ADDRESS=anh thì “And I'll stand here” phải tiếp tục dùng SELF=em nếu vẫn cùng speaker→listener.
+        - Nếu chưa chắc cue là lời của ai nhưng continuity mạnh hơn mọi giả thuyết khác, ưu tiên khóa của lượt hội thoại đang tiếp diễn; KHÔNG bịa một speaker/listener mới chỉ để hợp một câu đơn lẻ.
         - Giận dữ/phẫn nộ/buồn/sợ/ghen/căng thẳng/mỉa mai/đe dọa KHÔNG tự nó cho phép đổi đại từ. Thể hiện cảm xúc bằng từ vựng, nhịp câu, mức trực diện và sắc thái, trong khi vẫn giữ SELF/ADDRESS.
         - Chỉ được đổi cặp xưng hô khi có bằng chứng trong lời thoại/ngữ cảnh rằng listener thay đổi, quan hệ/vai vế giao tiếp thực sự thay đổi, hoặc nhân vật cố ý chuyển register/cách xưng hô. Không có bằng chứng đó thì GIỮ KHÓA.
         - Trước khi trả kết quả của chunk, tự rà lại các cue liền nhau có cùng speaker→listener và sửa mọi trường hợp SELF/ADDRESS bị trôi hoặc đảo ngoài các ngoại lệ có bằng chứng rõ.
+        - Trong lượt rà cuối, đặc biệt tìm các cue đột ngột xuất hiện “tôi/bạn” hoặc SELF/ADDRESS khác giữa một dialogue pair đang khóa; nếu không có evidence đổi người/đổi register thì phục hồi đúng cặp đã khóa.
         - Không mặc định mọi nam/nữ là anh/em; không tự đổi ông/cháu, bà/cháu, bác/cháu, chú/cháu, cô/cháu sang anh/em hoặc cậu/tớ khi Guide có bằng chứng rõ.
         - Nếu câu thoại có sắc thái kính trọng, khinh miệt, thân mật, đe dọa, mỉa mai... hãy thể hiện bằng tiếng Việt nhưng không tự động đổi SELF/ADDRESS chỉ vì sắc thái đó.
         - Không đưa ghi chú của người dịch vào phụ đề.
