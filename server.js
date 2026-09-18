@@ -1250,8 +1250,42 @@
                 return out;
               };
 
-              const subdlVi = flatten(viPacks, 'vi').slice(0, 6);
-              const subdlEn = flatten(enPacks, 'en').slice(0, 6);
+              // v3.9.83 CLEAN: SubDL can return a whole-season pack even when
+              // episode_number is supplied. Filter EACH unpacked file by requested
+              // season/episode before taking the first 6 results.
+              const episodeMatchesSubDL = sub => {
+                if (type !== 'series' || season === null || episode === null) return true;
+
+                const sVals = [
+                  sub?.season, sub?.season_number, sub?.seasonNumber,
+                  sub?.attributes?.season, sub?.attributes?.season_number, sub?.attributes?.seasonNumber
+                ].map(Number).filter(Number.isFinite);
+                const eVals = [
+                  sub?.episode, sub?.episode_number, sub?.episodeNumber,
+                  sub?.attributes?.episode, sub?.attributes?.episode_number, sub?.attributes?.episodeNumber
+                ].map(Number).filter(Number.isFinite);
+
+                if (sVals.some(v => v !== Number(season))) return false;
+                if (eVals.some(v => v !== Number(episode))) return false;
+
+                const names = [
+                  subtitleName(sub, ''),
+                  typeof sub?.release_name === 'string' ? sub.release_name : '',
+                  typeof sub?.name === 'string' ? sub.name : '',
+                  typeof sub?.file_name === 'string' ? sub.file_name : '',
+                  typeof sub?.filename === 'string' ? sub.filename : ''
+                ].filter(Boolean).join(' ');
+
+                const matches = [...names.matchAll(/(?:^|[\s._\-\[(])S(\d{1,3})[ ._\-]?E(\d{1,3})(?=$|[\s._\-\])])/gi)];
+                if (matches.length === 0) return true;
+                return matches.some(m =>
+                  Number(m[1]) === Number(season) &&
+                  Number(m[2]) === Number(episode)
+                );
+              };
+
+              const subdlVi = flatten(viPacks, 'vi').filter(episodeMatchesSubDL).slice(0, 6);
+              const subdlEn = flatten(enPacks, 'en').filter(episodeMatchesSubDL).slice(0, 6);
               const mapped = [
                 ...subdlVi.map(sub => ({ sub, vi: true })),
                 ...subdlEn.map(sub => ({ sub, vi: false }))
@@ -1528,9 +1562,16 @@
             // v3.9.30: `id` is now the release name shown by Nuvio, so provider
             // ordering must be derived from the URL instead of the old id prefix.
             const url = String(sub?.url || '').toLowerCase();
-            if (url.includes('/proxy-os?') || url.includes('/translate-sub?provider=os')) return 0;
-            if (url.includes('/subsource-sub/') || url.includes('/translate-sub?provider=subsource')) return 1;
-            if (url.includes('/proxy-subdl?') || url.includes('/translate-sub?provider=subdl')) return 2;
+            try {
+              const u = new URL(url);
+              const provider = String(u.searchParams.get('provider') || '').toLowerCase();
+              if (provider === 'os' || provider === 'opensubtitles') return 0;
+              if (provider === 'subsource') return 1;
+              if (provider === 'subdl') return 2;
+            } catch (_) {}
+            if (url.includes('/proxy-os?')) return 0;
+            if (url.includes('/subsource-sub/')) return 1;
+            if (url.includes('/proxy-subdl?')) return 2;
             return 3;
           };
 
