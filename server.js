@@ -54,6 +54,87 @@
           return {};
         }
 
+
+        // v1.0.0: persistent configuration store (Upstash Redis via Vercel KV REST env).
+        // Stable config IDs keep the installed addon URL unchanged when keys are updated.
+        const CONFIG_KEY_PREFIX = 'nothingp:aio:config:';
+        const CONFIG_ID_RE = /^cfg_[A-Za-z0-9_-]{20,120}$/;
+
+        function redisRestCredentials() {
+          const url = String(
+            process.env.KV_REST_API_URL ||
+            process.env.UPSTASH_REDIS_REST_URL ||
+            ''
+          ).replace(/\/+$/, '');
+          const token = String(
+            process.env.KV_REST_API_TOKEN ||
+            process.env.UPSTASH_REDIS_REST_TOKEN ||
+            ''
+          );
+          return { url, token };
+        }
+
+        async function redisCommand(command) {
+          const { url, token } = redisRestCredentials();
+          if (!url || !token) throw new Error('Redis/KV environment variables are missing');
+          const response = await axios.post(url, command, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000,
+            validateStatus: status => status >= 200 && status < 300
+          });
+          return response.data?.result;
+        }
+
+        function sanitizeStoredConfig(input) {
+          const c = input && typeof input === 'object' ? input : {};
+          return {
+            model: String(c.model || 'gemini-3.5-flash-lite').slice(0, 80),
+            geminiKeys: Array.isArray(c.geminiKeys)
+              ? c.geminiKeys.map(v => String(v || '').trim()).filter(Boolean).slice(0, 3)
+              : [],
+            opensubtitlesKey: String(c.opensubtitlesKey || '').trim(),
+            subdlKey: String(c.subdlKey || '').trim(),
+            subsourceKey: String(c.subsourceKey || '').trim()
+          };
+        }
+
+        async function loadStoredConfig(configId) {
+          if (!CONFIG_ID_RE.test(String(configId || ''))) return null;
+          const raw = await redisCommand(['GET', CONFIG_KEY_PREFIX + configId]);
+          if (!raw) return null;
+          try {
+            return sanitizeStoredConfig(JSON.parse(raw));
+          } catch {
+            return null;
+          }
+        }
+
+        async function saveStoredConfig(configId, config) {
+          if (!CONFIG_ID_RE.test(String(configId || ''))) {
+            throw new Error('Invalid config ID');
+          }
+          const clean = sanitizeStoredConfig(config);
+          await redisCommand(['SET', CONFIG_KEY_PREFIX + configId, JSON.stringify(clean)]);
+          return clean;
+        }
+
+        async function resolveConfig(configRef) {
+          const ref = String(configRef || '').trim();
+          if (CONFIG_ID_RE.test(ref)) {
+            try {
+              return (await loadStoredConfig(ref)) || {};
+            } catch (err) {
+              console.error('[Redis config GET]', err.response?.status || '', err.message || err);
+              return {};
+            }
+          }
+          // Backward compatibility for old base64-config addon URLs.
+          return parseConfig(ref);
+        }
+
         function escapeHtml(value) {
           return String(value || '').replace(/[&<>"']/g, char => ({
             '&': '&amp;',
@@ -65,12 +146,23 @@
         }
 
         app.get('/', (req, res) => res.redirect('/configure'));
-        app.get('/configure', (req, res) => renderConfigPage(req, res, {}));
-        app.get('/:config/configure', (req, res) => {
-          renderConfigPage(req, res, parseConfig(req.params.config));
+        app.get('/configure', (req, res) => renderConfigPage(req, res, {}, ''));
+        app.get('/:config/configure', async (req, res) => {
+          const saved = await resolveConfig(req.params.config);
+          renderConfigPage(req, res, saved, req.params.config);
         });
 
-        function renderConfigPage(req, res, savedConfig) {
+        app.post('/api/config/:configId', async (req, res) => {
+          try {
+            const saved = await saveStoredConfig(req.params.configId, req.body || {});
+            return res.json({ ok: true, configId: req.params.configId, saved: true });
+          } catch (err) {
+            console.error('[Redis config SET]', err.response?.status || '', err.message || err);
+            return res.status(500).json({ ok: false, error: String(err.message || err) });
+          }
+        });
+
+        function renderConfigPage(req, res, savedConfig, currentConfigId = '') {
           const geminiKeys = savedConfig.geminiKeys || [];
           res.send(`<!DOCTYPE html>
         <html lang="vi">
@@ -114,11 +206,17 @@
         </form>
         </div>
         <script>
-        function getAddonUrl(){
-          const config=getConfigObject();
-          return location.origin+'/'+btoa(unescape(encodeURIComponent(JSON.stringify(config))))+'/manifest.json';
+        let configId = ${JSON.stringify(currentConfigId && CONFIG_ID_RE.test(currentConfigId) ? currentConfigId : '')};
+
+        function createConfigId(){
+          if(configId && /^cfg_[A-Za-z0-9_-]{20,120}$/.test(configId)) return configId;
+          const bytes=new Uint8Array(24);
+          crypto.getRandomValues(bytes);
+          const token=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+          configId='cfg_'+token;
+          return configId;
         }
-        
+
         function getConfigObject(){
           return {
             model:document.getElementById('modelSelect').value,
@@ -128,27 +226,73 @@
             subsourceKey:document.getElementById('subsourceKey').value.trim()
           };
         }
-        function getConfigToken(){
-          return btoa(unescape(encodeURIComponent(JSON.stringify(getConfigObject()))));
+
+        function getAddonUrl(){
+          const id=createConfigId();
+          return location.origin+'/'+id+'/manifest.json';
         }
-        document.getElementById('saveBtn').onclick=()=>{
-          const token=getConfigToken();
-          const addonUrl=location.origin+'/'+token+'/manifest.json';
+
+        async function saveConfig(){
+          const id=createConfigId();
+          const response=await fetch('/api/config/'+encodeURIComponent(id),{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(getConfigObject())
+          });
+          const data=await response.json().catch(()=>({}));
+          if(!response.ok || !data.ok) throw new Error(data.error || 'Không thể lưu cấu hình');
+          const addonUrl=getAddonUrl();
           document.getElementById('addonUrlOutput').value=addonUrl;
-          try{localStorage.setItem('nothingp_aio_config', JSON.stringify(getConfigObject()));}catch(e){}
-          // The installed Stremio/Nuvio addon is identified by its configured manifest URL.
-          // Opening the newly configured manifest updates/reinstalls that same addon with the new keys.
-          location.href='stremio://'+addonUrl.replace(/^https?:\/\//,'');
+          try{localStorage.setItem('nothingp_aio_config_id',id);}catch(e){}
+          if(location.pathname==='/configure'){
+            history.replaceState(null,'','/'+id+'/configure');
+          }
+          return addonUrl;
+        }
+
+        document.getElementById('saveBtn').onclick=async()=>{
+          try{
+            await saveConfig();
+            alert('Đã lưu thay đổi và đồng bộ vào Addon!');
+          }catch(e){
+            alert('Lưu thất bại: '+(e.message||e));
+          }
         };
-        document.getElementById('installBtn').onclick=()=>{
-          location.href='stremio://'+getAddonUrl().replace(/^https?:\\/\\//,'');
+
+        document.getElementById('installBtn').onclick=async()=>{
+          try{
+            const addonUrl=await saveConfig();
+            const stremioTarget=addonUrl.replace('https://','').replace('http://','');
+            window.location.href='stremio://'+stremioTarget;
+          }catch(e){
+            alert('Không thể lưu cấu hình trước khi cài đặt: '+(e.message||e));
+          }
         };
+
         document.getElementById('copyBtn').onclick=async()=>{
-          const url=getAddonUrl(), input=document.getElementById('addonUrlOutput');
-          input.value=url; input.select();
-          try{await navigator.clipboard.writeText(url);alert('Đã sao chép link addon!')}
-          catch{alert('Hãy sao chép link trong ô.')}
+          try{
+            const url=await saveConfig(), input=document.getElementById('addonUrlOutput');
+            input.value=url;
+            if(navigator.clipboard && window.isSecureContext){
+              await navigator.clipboard.writeText(url);
+            }else{
+              input.removeAttribute('readonly');
+              input.focus(); input.select(); input.setSelectionRange(0,99999);
+              document.execCommand('copy');
+              input.setAttribute('readonly','');
+            }
+            alert('Đã sao chép link cài đặt!');
+          }catch(e){
+            alert('Không thể sao chép link cài đặt: '+(e.message||e));
+          }
         };
+
+        if(!configId){
+          try{
+            const oldId=localStorage.getItem('nothingp_aio_config_id');
+            if(oldId && /^cfg_[A-Za-z0-9_-]{20,120}$/.test(oldId)) configId=oldId;
+          }catch(e){}
+        }
         document.getElementById('addonUrlOutput').value = getAddonUrl();
         </script>
         </body>
@@ -181,7 +325,12 @@
         };
 
         app.get('/healthz', (req, res) => {
-          res.status(200).json({ ok: true, version: '1.0.0', uptime: Math.round(process.uptime()) });
+          res.status(200).json({
+            ok: true,
+            version: '1.0.0',
+            redisConfig: !!(redisRestCredentials().url && redisRestCredentials().token),
+            uptime: Math.round(process.uptime())
+          });
         });
 
         app.get('/manifest.json', (req, res) => res.json(defaultManifest));
@@ -1103,7 +1252,7 @@
         }
 
         async function handleSubtitles(req, res, encodedConfig) {
-          const config = parseConfig(encodedConfig);
+          const config = await resolveConfig(encodedConfig);
           const { type, id } = req.params;
           const parts = id.split(':');
           const imdbId = parts[0];
@@ -1636,7 +1785,7 @@
 
         app.get('/subsource-sub/:subtitleId', async (req, res) => {
           const { subtitleId } = req.params;
-          const config = parseConfig(req.query.config || '');
+          const config = await resolveConfig(req.query.config || '');
           const apiKey = String(config.subsourceKey || '').trim();
           console.log('[VI ORIGINAL SubSource]', JSON.stringify({ subtitleId: subtitleId || '', hasKey: !!apiKey }));
 
@@ -1659,7 +1808,7 @@
         app.get('/proxy-os', async (req, res) => {
           const fileId = String(req.query.fileId || '');
           const directLink = String(req.query.link || '');
-          const config = parseConfig(req.query.config || '');
+          const config = await resolveConfig(req.query.config || '');
           const apiKeyOS = String(config.opensubtitlesKey || '2015').trim();
           console.log('[VI ORIGINAL OpenSubtitles]', JSON.stringify({ fileId: fileId || '', hasKey: !!config.opensubtitlesKey }));
 
@@ -1711,7 +1860,7 @@
 
         app.get('/proxy-subdl', async (req, res) => {
           const url = String(req.query.url || '');
-          const config = parseConfig(req.query.config || '');
+          const config = await resolveConfig(req.query.config || '');
           const key = String(config.subdlKey || '').trim();
           console.log('[VI ORIGINAL SubDL]', JSON.stringify({ hasUrl: !!url, hasKey: !!key }));
 
@@ -1748,7 +1897,7 @@
         });
 
         app.get('/ai-test-all', async (req, res) => {
-          const config = parseConfig(req.query.config || '');
+          const config = await resolveConfig(req.query.config || '');
           const geminiKeys = (config.geminiKeys && config.geminiKeys.length > 0)
             ? config.geminiKeys
             : [process.env.GEMINI_API_KEY].filter(Boolean);
@@ -1778,7 +1927,7 @@
         });
 
         app.get('/ai-test', async (req, res) => {
-          const config = parseConfig(req.query.config || '');
+          const config = await resolveConfig(req.query.config || '');
           const geminiKeys = (config.geminiKeys && config.geminiKeys.length > 0)
             ? config.geminiKeys
             : [process.env.GEMINI_API_KEY].filter(Boolean);
@@ -2120,7 +2269,7 @@
           }
 
           try {
-            const config = parseConfig(configQuery);
+            const config = await resolveConfig(configQuery);
             console.log('[translate-sub request]', JSON.stringify({
               provider: provider || 'legacy',
               model: model || config.model || 'gemini-3.5-flash-lite',
