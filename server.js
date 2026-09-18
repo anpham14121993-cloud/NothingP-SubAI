@@ -1018,9 +1018,15 @@
 
         XƯNG HÔ HAI CHIỀU:
         - SELF = cách NGƯỜI NÓI tự xưng; ADDRESS = cách NGƯỜI NÓI gọi NGƯỜI NGHE.
+        - Với quan hệ A→B: khi A là speaker, I/me/my/mine của A phải dùng SELF trong a_to_b; you/your/yours chỉ B phải dùng ADDRESS trong a_to_b.
+        - Với quan hệ B→A: khi B là speaker, I/me/my/mine của B phải dùng SELF trong b_to_a; you/your/yours chỉ A phải dùng ADDRESS trong b_to_a.
+        - Tuyệt đối không lấy ADDRESS để dịch I/me/my/mine và không lấy SELF để dịch you/your/yours.
         - Không đảo SELF/ADDRESS. A→B và B→A là hai hướng độc lập.
+        - Nếu cùng một nhân vật nói với người nghe khác nhau, SELF/ADDRESS có thể khác theo từng cặp quan hệ; không áp một cặp đại từ toàn cục cho nhân vật.
         - Khi evidence đủ mạnh, khóa cặp xưng hô và giữ nhất quán.
-        - Chỉ đổi khi chính tập phim có bằng chứng rõ về thay đổi quan hệ/trạng thái.
+        - CẢM XÚC ĐƠN THUẦN KHÔNG ĐƯỢC PHÁ KHÓA XƯNG HÔ: giận dữ, phẫn nộ, buồn, sợ, hoảng loạn, ghen, căng thẳng, mỉa mai, đe dọa hoặc xúc động chỉ làm thay đổi sắc thái/cách diễn đạt, không tự động đổi SELF/ADDRESS.
+        - Chỉ đổi SELF/ADDRESS khi chính lời thoại/ngữ cảnh của tập có bằng chứng rõ rằng speaker/listener đã thay đổi, quan hệ/vai vế giao tiếp thực sự thay đổi, hoặc nhân vật CỐ Ý chuyển register/cách xưng hô để tạo khoảng cách, xúc phạm, trang trọng hóa hay đánh dấu một bước ngoặt quan hệ.
+        - Nếu không có bằng chứng rõ cho việc chuyển register/xưng hô, tiếp tục dùng chính xác cặp SELF/ADDRESS đã khóa ở cue trước cho cùng speaker→listener.
 
         PROTECTED NAMES / TERMS:
         - Nhận diện tên nhân vật, alias, địa danh, tổ chức, sinh vật/thực thể, vật phẩm, phép thuật và thuật ngữ hư cấu.
@@ -2591,9 +2597,17 @@
         - Tên/alias/term có translate=false trong Character Guide là PROTECTED TOKEN: giữ nguyên 100%, không dịch nghĩa, Việt hóa hoặc diễn giải. Ví dụ Malivore phải vẫn là Malivore.
         - Trước khi chọn đại từ, xác định người nói/người nghe và xét kinship, hierarchy, relative_age, gender, quan hệ và mức thân mật.
         - SELF là cách người nói tự xưng; ADDRESS là cách người nói gọi người nghe. Không đảo SELF/ADDRESS.
+        - QUY TẮC ÁNH XẠ CỨNG: I/me/my/mine của speaker → SELF của đúng hướng speaker→listener; you/your/yours chỉ listener → ADDRESS của đúng hướng speaker→listener.
+        - Ví dụ Guide có A→B = SELF "cháu", ADDRESS "ông": khi A nói "I know you" phải theo hướng "cháu ... ông"; tuyệt đối không đảo thành "ông ... cháu".
+        - Trước mỗi cue có đại từ ngôi 1/ngôi 2, xác định speaker và listener trước rồi mới chọn đúng a_to_b hoặc b_to_a. Nếu chưa xác định chắc speaker/listener, không được tự đảo cặp chỉ để câu nghe quen tai.
+        - Không dùng ADDRESS cho I/me/my/mine; không dùng SELF cho you/your/yours.
         - Nếu Guide đã khóa A→B hoặc B→A thì giữ đúng hướng đó xuyên suốt các chunk.
+        - LIÊN TỤC TRONG CÙNG CHUNK: nếu các cue liền nhau vẫn là cùng speaker→listener và không có bằng chứng rõ về đổi register/quan hệ, tái sử dụng chính xác cặp SELF/ADDRESS đã khóa; không tự đổi em→tôi, anh→tôi, cháu→tôi... chỉ để câu nghe mạnh hoặc tự nhiên hơn.
+        - Giận dữ/phẫn nộ/buồn/sợ/ghen/căng thẳng/mỉa mai/đe dọa KHÔNG tự nó cho phép đổi đại từ. Thể hiện cảm xúc bằng từ vựng, nhịp câu, mức trực diện và sắc thái, trong khi vẫn giữ SELF/ADDRESS.
+        - Chỉ được đổi cặp xưng hô khi có bằng chứng trong lời thoại/ngữ cảnh rằng listener thay đổi, quan hệ/vai vế giao tiếp thực sự thay đổi, hoặc nhân vật cố ý chuyển register/cách xưng hô. Không có bằng chứng đó thì GIỮ KHÓA.
+        - Trước khi trả kết quả của chunk, tự rà lại các cue liền nhau có cùng speaker→listener và sửa mọi trường hợp SELF/ADDRESS bị trôi hoặc đảo ngoài các ngoại lệ có bằng chứng rõ.
         - Không mặc định mọi nam/nữ là anh/em; không tự đổi ông/cháu, bà/cháu, bác/cháu, chú/cháu, cô/cháu sang anh/em hoặc cậu/tớ khi Guide có bằng chứng rõ.
-        - Nếu câu thoại có sắc thái kính trọng, khinh miệt, thân mật, đe dọa, mỉa mai... hãy thể hiện bằng tiếng Việt.
+        - Nếu câu thoại có sắc thái kính trọng, khinh miệt, thân mật, đe dọa, mỉa mai... hãy thể hiện bằng tiếng Việt nhưng không tự động đổi SELF/ADDRESS chỉ vì sắc thái đó.
         - Không đưa ghi chú của người dịch vào phụ đề.
 
         ĐỊNH DẠNG BẮT BUỘC:
